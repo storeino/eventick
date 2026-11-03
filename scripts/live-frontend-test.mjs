@@ -219,6 +219,24 @@ async function main() {
     customer: await login(ACCOUNTS.customer),
   };
 
+  /*
+   * Clear anything an earlier run left behind, before creating this run's.
+   *
+   * The CLEANUP group at the bottom only runs on the success path, so a
+   * failure partway through orphaned its events — and they stay PUBLISHED,
+   * which means they appear in the real catalogue carrying a placeholder
+   * image. Two fe-test events were found doing exactly that on the demo site.
+   *
+   * Matches the slug PREFIX rather than this run's suffix, which is what
+   * makes this a purge rather than a repeat of the end-of-run delete.
+   */
+  const stale = await api("GET", "/organiser/events", { token: tokens.admin });
+  for (const ev of stale.data?.events ?? []) {
+    if (typeof ev.slug === "string" && ev.slug.startsWith("fe-test-")) {
+      await api("DELETE", `/organiser/events/${ev.slug}`, { token: tokens.admin });
+    }
+  }
+
   // ── Login.jsx / AuthContext.jsx ───────────────────────────────────────
   setGroup("AUTH  Login.jsx, AuthContext.jsx");
   {

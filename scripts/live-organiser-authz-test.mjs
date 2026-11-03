@@ -78,6 +78,24 @@ const revoke = (p) => call("DELETE", `/api/auth/roles/ORGANISER/permissions/${p}
 /** ORGANISER's grants as found, so the run can put them back exactly. */
 const before = (await call("GET", "/api/auth/permissions", { token: tokens.admin })).data?.roles?.ORGANISER ?? [];
 
+/*
+ * Clear anything an earlier run left behind, before creating this run's.
+ *
+ * The cleanup at the bottom only runs on the success path, so a failure
+ * partway through orphaned its event — and those events stay PUBLISHED, so
+ * they show up in the real catalogue with a placeholder image. Two of them
+ * were found sitting on the demo site.
+ *
+ * Matches the slug PREFIX rather than this run's suffix, which is what makes
+ * it a purge rather than a repeat of the same end-of-run delete.
+ */
+const stale = await call("GET", "/api/organiser/events", { token: tokens.admin });
+for (const ev of stale.data?.events ?? []) {
+  if (typeof ev.slug === "string" && ev.slug.startsWith("orgauthz-")) {
+    await call("DELETE", `/api/organiser/events/${ev.slug}`, { token: tokens.admin });
+  }
+}
+
 // ── A fixture to act on: one event, one paid order. ──────────────────────
 const SUFFIX = Date.now();
 const slug = `orgauthz-${SUFFIX}`;
