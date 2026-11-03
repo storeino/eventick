@@ -1,5 +1,24 @@
 # CMI test session — live and verified
 
+> ✅ **A real payment completed end to end on 03/11/2026**, on
+> `eventick.speedliv.com`, against merchant MTZON (600002996).
+>
+> | | |
+> |---|---|
+> | Card | `4000000000000010`, exp `12/2028`, CVV `000` |
+> | CMI authorisation | `366954` · Visa `**** 0010` |
+> | Amount | 850.00 MAD |
+> | Result | order **PAID**, **2 tickets issued**, CMI TransId stored |
+>
+> Two things had to land together for this. Badr's change from
+> `TranType: "Auth"` to **`preAuth`** (commit `c69a013`), which is the
+> spelling the Storeino production gateway uses; and a card that CMI
+> actually recognises — the standard test PAN above, not one from the
+> MTZON kit.
+>
+> The `HOST based messaging problem (99)` that blocked every earlier attempt
+> is gone. **Test cards are listed under "Buy a ticket in the browser" below.**
+
 The admin's credentials are in. **No back-office step is needed**: the key
 below is already set for this merchant, which is why it verifies.
 
@@ -53,9 +72,23 @@ below is already set for this merchant, which is why it verifies.
 
 5. You land on **CMI's own 3-D Secure page** — their domain, their branding.
    Your card number never touches Eventick.
-6. Pay with a test card from the **certification-test file inside the
-   integration kit** (download auth `kitmtc` / `AK16M9`). The cards are not in
-   the email.
+6. Pay with one of these. **Verified working against MTZON (600002996)** —
+   the Visa is the one that completed the payment on 03/11/2026:
+
+   | Card | Number | Expiry | CVV |
+   |---|---|---|---|
+   | **Visa** | `4000000000000010` | any future date | `000` |
+   | Mastercard | `5453010000066100` | any future date | `000` |
+   | Mastercard 3-DS | `5191630100004896` | any future date | `000` (auth code `123`) |
+
+   Tick **"Confirmer l'acceptation des conditions générales"** — the form will
+   not submit without it. Use an expiry well in the future: the dropdown
+   defaults to a month that has already passed.
+
+   These are the standard CMI test PANs, not cards from the MTZON integration
+   kit (download auth `kitmtc` / `AK16M9`, if you ever need it). The kit was
+   chased for days on the assumption its cards were the only ones provisioned
+   for this merchant; they were not needed.
 7. You return to `/confirmation/<order-id>` with your ticket.
 
 ### What to verify
