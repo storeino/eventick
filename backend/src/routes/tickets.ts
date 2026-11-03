@@ -196,6 +196,20 @@ ticketsRouter.get(
     // UI would render buttons that are now certain to 403.
     const ownsIt = Boolean(req.user?.id) && ticket.order.customerId === req.user!.id;
 
+    /*
+     * Resale, which is how a holder who cannot attend gets their money back.
+     *
+     * It matters more since tickets became final sale: cancelling a seat
+     * returns nothing, so reselling is the only way to recover the price.
+     * The UI cannot work that out for itself — allowResale lives on the
+     * event and the live listing on another table — so it is reported here
+     * rather than left to the screen to guess and then 409.
+     *
+     * Price is not a field: a listing is always face value, set server-side.
+     */
+    const listing = await prisma.resaleListing.findUnique({ where: { ticketId: ticket.id } });
+    const liveListing = listing && listing.status === "LISTED" ? listing : null;
+
     res.json({
       status: ticket.status,
       cancel: policy,
@@ -203,6 +217,28 @@ ticketsRouter.get(
       share: openShare ? { id: openShare.id, token: openShare.token } : null,
       shareable:
         ticket.status === "VALID" && ticket.order.event.startAt.getTime() > Date.now() && !openShare,
+      /** A listing already out there, so the UI shows the link back. */
+      resale: liveListing
+        ? { id: liveListing.id, token: liveListing.token, priceCents: liveListing.priceCents }
+        : null,
+      /*
+       * Whether listing one is possible at all. Mirrors listTicketForResale's
+       * own guards so the button is absent rather than present-and-409ing:
+       * the organiser must have opted in, the event must not have started,
+       * the ticket must be live, and there must be no listing already.
+       *
+       * `ownsIt` too, because selling needs a real session — a confirmation
+       * link is not enough to move money.
+       */
+      resellable:
+        ownsIt &&
+        ticket.order.event.allowResale &&
+        ticket.status === "VALID" &&
+        ticket.order.event.startAt.getTime() > Date.now() &&
+        !liveListing &&
+        listing?.status !== "SOLD",
+      /** So the screen can say what a sale would return, before listing. */
+      facePriceCents: ticket.tier.priceCents,
       /** False for a guest holding only their confirmation link. */
       viaSession: ownsIt,
       /** The order to claim, so the UI can offer that in one step. */

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download, Pencil, Printer, Share2, Ticket as TicketIcon, UserPlus, XCircle } from "lucide-react";
+import { Copy, Download, Pencil, Printer, Share2, Tag, Ticket as TicketIcon, UserPlus, XCircle } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { QrMark } from "../components/QrMark";
 import { Shell } from "../components/Shell";
@@ -79,6 +79,48 @@ export default function TicketDetail() {
     }
   };
 
+  /*
+   * List this ticket for resale.
+   *
+   * This is how a holder who cannot attend gets their money back, and since
+   * tickets became final sale it is the ONLY way: cancelling the seat
+   * returns nothing. The price is not asked for — the server always lists at
+   * face value, so there is no field to get wrong and no scalping to police.
+   *
+   * What comes back is a token. That link IS the sale: whoever opens it can
+   * buy the seat, and the seller is paid when they do.
+   */
+  const listForResale = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await api.post("/resale/listings", { ticketId }, { orderToken: tokenForTicket(ticketId) });
+      toast.success(t("resaleListed"));
+      // Straight to the clipboard: a link nobody can see is a listing that
+      // never sells, and the panel below shows it again on reload anyway.
+      await copyResale(res.token);
+      load();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelListing = async (id) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.del(`/resale/listings/${id}`);
+      toast.success(t("resaleCancelled"));
+      load();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const changeZone = async (tierId, forfeitCents = 0) => {
     if (busy) return;
     // A downgrade is irreversible and refunds nothing, so the amount being
@@ -121,6 +163,20 @@ export default function TicketDetail() {
   // the recipient claims it, so until then this ticket keeps working and the
   // share can be pulled back.
   const shareUrl = (token) => `${window.location.origin}/billet-offert/${token}`;
+
+  // A listing's link is the sale: whoever opens it can buy the seat.
+  const resaleUrl = (token) => `${window.location.origin}/revente/${token}`;
+
+  const copyResale = async (token) => {
+    try {
+      await navigator.clipboard.writeText(resaleUrl(token));
+      toast.success(t("resaleCopied"));
+    } catch {
+      // Same fallback as copyShare: the clipboard needs a secure context and
+      // can be blocked outright, and showing the link beats silence.
+      window.prompt(t("resaleLink"), resaleUrl(token));
+    }
+  };
 
   const createShare = async () => {
     if (busy) return;
@@ -361,6 +417,62 @@ export default function TicketDetail() {
                   ? t("cancelDisabled")
                   : t("cancelClosed")}
             </p>
+
+            {/*
+              Resale — the only way a holder recovers their money.
+              Tickets are final sale: cancelling above returns the seat but
+              not the price, so for someone who simply cannot attend this is
+              the answer. Stated plainly next to the cancel button, because
+              otherwise they take the one that pays nothing.
+
+              Three states, and the panel is absent entirely in a fourth
+              (the organiser has not enabled resale) rather than showing a
+              button that could only fail.
+            */}
+            {options.resale ? (
+              <div className="mt-4 rounded-control border border-line/15 bg-paper p-3">
+                <p className="text-sm font-bold">{t("resaleLive")}</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted">
+                  {t("resaleLiveNote").replace("{n}", money(options.resale.priceCents))}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={<Copy className="size-4" />}
+                    onClick={() => copyResale(options.resale.token)}
+                    disabled={busy}
+                  >
+                    {t("resaleCopy")}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => cancelListing(options.resale.id)}
+                    disabled={busy}
+                  >
+                    {t("resaleWithdraw")}
+                  </Button>
+                </div>
+              </div>
+            ) : options.resellable ? (
+              <div className="mt-4 rounded-control border border-line/15 bg-paper p-3">
+                <p className="text-sm font-bold">{t("resaleTitle")}</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted">
+                  {t("resaleNote").replace("{n}", money(options.facePriceCents ?? 0))}
+                </p>
+                <Button
+                  className="mt-3"
+                  variant="secondary"
+                  size="sm"
+                  icon={<Tag className="size-4" />}
+                  onClick={listForResale}
+                  disabled={busy}
+                >
+                  {t("resaleList")}
+                </Button>
+              </div>
+            ) : null}
 
             {/*
               A guest reached this page with their confirmation link, which is

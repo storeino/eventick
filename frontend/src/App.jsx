@@ -7,6 +7,7 @@ import Confirmation from "./screens/Confirmation";
 import Billets from "./screens/Billets";
 import TicketDetail from "./screens/TicketDetail";
 import ClaimShare from "./screens/ClaimShare";
+import BuyResale from "./screens/BuyResale";
 import Login from "./screens/Login";
 import Organiser from "./screens/Organiser";
 import BecomeOrganiser from "./screens/BecomeOrganiser";
@@ -27,6 +28,10 @@ export default function App() {
       {/* Public: the token is the credential, so a recipient with no account
           can claim a ticket someone gave them. */}
       <Route path="/billet-offert/:token" element={<ClaimShare />} />
+      {/* A resale link. Public to OPEN — the buyer has to see what is on
+          offer before deciding — but buying needs an account, which the
+          screen asks for rather than the route. */}
+      <Route path="/revente/:token" element={<BuyResale />} />
       <Route path="/login" element={<Login />} />
       <Route path="/organiser" element={<Organiser />} />
       <Route path="/devenir-organisateur" element={<BecomeOrganiser />} />
