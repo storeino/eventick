@@ -490,6 +490,33 @@ async function main() {
       `${(onEventAfter.data?.resales ?? []).length} shown`,
     );
 
+    /*
+     * The organiser's own view of resale activity on their events.
+     *
+     * Scoped by ownership, like every other list on that router: an
+     * organiser who can see another organiser's resales can see which of
+     * their shows are being dumped and at what rate.
+     */
+    const orgView = await expectStatus("GET /organiser/resales as the owner", "GET", "/api/organiser/resales", 200, {
+      token: tokens.organiser,
+    });
+    const orgRow = (orgView.data?.resales ?? []).find((r) => r.eventSlug === slug);
+    record("the owner sees the listing on their event", Boolean(orgRow), orgRow ? orgRow.status : "absent");
+    record(
+      "and it carries what the table renders",
+      orgRow?.priceCents === 20000 && typeof orgRow?.ticketRef === "string" && typeof orgRow?.createdAt === "string",
+      `${orgRow?.priceCents} ${orgRow?.ticketRef}`,
+    );
+    record(
+      "but never the buyer's identity",
+      orgRow !== undefined && !("buyerEmail" in orgRow) && !("buyerName" in orgRow) && !("email" in orgRow),
+      Object.keys(orgRow ?? {}).join(","),
+    );
+    await expectStatus("GET /organiser/resales as a CUSTOMER → 403", "GET", "/api/organiser/resales", 403, {
+      token: tokens.customer,
+    });
+    await expectStatus("GET /organiser/resales anonymous → 401", "GET", "/api/organiser/resales", 401);
+
     const offer = await expectStatus("GET /:token is public", "GET", `/api/resale/${token}`, 200);
     record(
       "the offer names the event and price",

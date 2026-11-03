@@ -461,6 +461,64 @@ organiserRouter.patch(
   }),
 );
 
+/**
+ * Resale activity on this organiser's events.
+ *
+ * An organiser could already switch resale ON per event and had no way to
+ * see the result: who is reselling, at what price, what has sold. The
+ * setting existed, its consequences did not.
+ *
+ * Scoped to events the caller owns, except with `scope.any` — the same rule
+ * every other list here follows. Buyer identity is deliberately NOT
+ * returned: the organiser needs to know a seat changed hands, not who holds
+ * it now; the gate reads the ticket, and the holder's name is on it.
+ */
+organiserRouter.get(
+  "/resales",
+  canManageEvents,
+  asyncHandler(async (req, res) => {
+    const mayActAnywhere = await userHasPermission(req.user, "scope.any");
+    const slug = typeof req.query.slug === "string" ? req.query.slug : null;
+
+    const listings = await prisma.resaleListing.findMany({
+      where: {
+        ticket: {
+          tier: {
+            event: {
+              ...(mayActAnywhere ? {} : { organiserId: req.user!.id }),
+              ...(slug ? { slug } : {}),
+            },
+          },
+        },
+      },
+      include: { ticket: { include: { tier: { include: { event: true } } } } },
+      orderBy: { createdAt: "desc" },
+      // Capped: this grows with every listing ever made, and a dashboard
+      // that fetches all of it gets slower every week.
+      take: 200,
+    });
+
+    res.json({
+      resales: listings.map((l) => ({
+        id: l.id,
+        status: l.status,
+        priceCents: l.priceCents,
+        createdAt: l.createdAt.toISOString(),
+        soldAt: l.soldAt?.toISOString() ?? null,
+        ticketId: l.ticketId,
+        ticketRef: l.ticket.ref,
+        seatRow: l.ticket.seatRow,
+        seatNumber: l.ticket.seatNumber,
+        tierNameFr: l.ticket.tier.nameFr,
+        tierNameAr: l.ticket.tier.nameAr,
+        eventSlug: l.ticket.tier.event.slug,
+        eventTitleFr: l.ticket.tier.event.titleFr,
+        eventTitleAr: l.ticket.tier.event.titleAr,
+      })),
+    });
+  }),
+);
+
 organiserRouter.get(
   "/orders",
   canManageOrders,

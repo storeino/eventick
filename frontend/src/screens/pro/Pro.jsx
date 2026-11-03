@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
-import { Activity, CalendarDays, KeyRound, LayoutDashboard, LayoutGrid, MailPlus, QrCode, ReceiptText, ScrollText, ShieldCheck, Tags, Wallet } from "lucide-react";
+import { Activity, CalendarDays, KeyRound, LayoutDashboard, LayoutGrid, MailPlus, QrCode, ReceiptText, ScrollText, ShieldCheck, Tag, Tags, Wallet } from "lucide-react";
 import { Protected } from "../../components/Protected";
 import { useAuth } from "../../AuthContext";
 import { api } from "../../api";
@@ -15,6 +15,7 @@ import OrderDetail from "./OrderDetail";
 import Gate from "./Gate";
 import Finance from "./Finance";
 import Offers from "./Offers";
+import Resales from "./Resales";
 import Placements from "./Placements";
 import Invitations from "./Invitations";
 import Users from "./Users";
@@ -64,6 +65,7 @@ function ProInner() {
     { group: t.grpCatalogue, to: "/pro/placements", label: t.placements, icon: ic(LayoutGrid), permission: "events.manage" },
     { group: t.grpCatalogue, to: "/pro/invitations", label: t.invitations, icon: ic(MailPlus), permission: "events.manage" },
     { group: t.grpCatalogue, to: "/pro/offers", label: t.offers, icon: ic(Tags), permission: "promo.manage" },
+    { group: t.grpCatalogue, to: "/pro/resales", label: t.resales, icon: ic(Tag), permission: "events.manage" },
     { group: t.grpOperations, to: "/pro/gate", label: t.gate, icon: ic(QrCode), permission: "gate.checkin" },
     { group: t.grpFinances, to: "/pro/finance", label: t.finance, icon: ic(Wallet), permission: "finance.view" },
     { group: t.grpAdmin, to: "/pro/platform", label: t.platform, icon: ic(Activity), permission: "scope.any" },
@@ -145,6 +147,14 @@ function ProInner() {
           element={
             <Protected permission="promo.manage">
               <Offers />
+            </Protected>
+          }
+        />
+        <Route
+          path="resales"
+          element={
+            <Protected permission="events.manage">
+              <Resales />
             </Protected>
           }
         />
