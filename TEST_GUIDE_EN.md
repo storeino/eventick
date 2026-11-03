@@ -1990,6 +1990,172 @@ without waiting half an hour. It deletes the event afterwards.
 ✅ **Check 26 done.**
 
 ---
+
+# ⬆️ CHECK 27 — Moving zone: one way is free, the other costs money
+
+"Changer de zone" goes both ways, and they are not symmetrical.
+
+**Down** is immediate and refunds nothing — you give up the difference.
+**Up** owes the difference, so it takes a card payment before the seat moves.
+
+Tickets are final sale (check 2), so the downgrade really does keep your
+money. That is the point of the warning you are about to see.
+
+### Step 1 — Set up a ticket with somewhere to go
+
+1. Pro → **Placements** → pick any event and give it **three** zones at
+   different prices, e.g. Balcon **100**, Gradin **200**, Fosse **500**.
+2. Sign in as a customer and buy **one Gradin** ticket.
+3. Open it: **/billets** → the ticket → **"Gérer ce billet"**.
+
+**✔️ You must see** a **"Changer de zone"** list with the other two zones,
+each priced relative to the one you hold:
+
+| Zone | What it says | Button |
+|---|---|---|
+| Balcon (cheaper) | **"Vous perdez 100,00 MAD — aucun remboursement"** in amber | Changer de zone |
+| Fosse (dearer) | **"+300,00 MAD"** | **Surclasser** |
+
+> 💡 The zone you already hold is not listed. Neither is any zone on a
+> **comp** — an invitation is the organiser's to move, not the guest's.
+
+### Step 2 — Going down: the forfeit is stated, not hidden
+
+4. Press **Changer de zone** on **Balcon**.
+
+**✔️ A dialog appears** — the app's own, not the browser's:
+
+> **Changer de zone**
+> Cette zone est moins chère que la vôtre. Vous perdez la différence, soit
+> 100,00 MAD, qui ne vous sera pas remboursée. Le changement est définitif.
+> `[ Annuler ]` `[ Changer et perdre 100,00 MAD ]`
+
+5. Press **Annuler**. Nothing happens. Press it again and confirm.
+
+**✔️ The ticket is now Balcon**, and **Pro → Réservations still shows the
+order at 200,00 MAD**, not 100. No refund — that is the rule, stated before
+you agreed to it.
+
+> 🎯 This was a real bug twice over. The list used to say *"Sans
+> supplément"* — true, and read as *"free"* by someone about to lose 700 MAD.
+> Then the warning that replaced it was a raw `window.confirm`, which says
+> **"localhost:3100 says"**, cannot be translated, and is suppressed outright
+> by some mobile browsers — which would have moved the seat and taken the
+> money with no prompt shown at all.
+
+### Step 3 — Going up: it asks for the difference
+
+6. Buy another **Gradin** ticket, open it, and press **Surclasser** on Fosse.
+
+**✔️ A dialog appears** showing **300,00 MAD** — the difference, not the
+500 the zone costs — and asks for name, email and phone.
+
+7. Submit it.
+
+**✔️ In mock mode** the upgrade completes at once and the ticket reads
+**Fosse**. **With CMI configured** you get the hand-off button instead:
+**"Payer 300,00 MAD"**, and the seat moves only once the gateway confirms.
+
+**✔️ Pro → Réservations now shows TWO orders**: the original at 200,00 MAD,
+untouched, and a second at 300,00 MAD for the upgrade.
+
+> 💡 Why two orders rather than editing the first? Rewriting a settled order
+> to make the sum come out right would falsify what was actually charged —
+> and a payout is computed per order, from `total − refunded`. Two honest
+> records beat one edited one.
+
+### Step 4 — The seat is held while you are at the gateway
+
+This is the part that matters, and it is invisible unless you look for it.
+
+> ⚠️ **This step needs CMI configured.** In mock mode the upgrade settles the
+> instant you submit, so there is no "away at the gateway" moment to observe —
+> the dialog never pauses on a hand-off button. Run `.\payment-mode.ps1` to
+> see which mode you are in.
+
+8. Give Fosse a capacity of **2**. Upgrade one ticket into it (step 3), then
+   start a second upgrade and **stop at the "Payer" button** — do not press it.
+9. In another browser, open that event's page as a stranger.
+
+**✔️ Fosse shows 0 remaining**, not 1. The seat you are about to pay for is
+already subtracted from public availability.
+
+10. Close the dialog without paying.
+
+**✔️ Fosse returns to 1 remaining.** Backing out releases it immediately
+rather than leaving it off sale for the 15-minute hold.
+
+> 💡 Abandon the tab instead of closing the dialog and the seat still comes
+> back — just later. The hold lapses after 15 minutes and the sweeper cancels
+> the order on its next pass, the same path an abandoned cart takes.
+
+> 🎯 Why this exists: CMI is a **redirect** gateway, so you are away on its
+> page for as long as 3-D Secure takes. Without the hold, the last seat could
+> sell while you were paying for it — and **CMI has no refund API**, so
+> getting that money back means someone reversing it by hand in the back
+> office.
+
+### Step 5 — A full zone refuses, before any money
+
+11. Fill Fosse completely, then try to upgrade another ticket into it.
+
+**✔️ The button reads "Complet" and is disabled.** Forced through the API it
+returns **409**, and nothing is charged.
+
+```bash
+# Nothing is offered that cannot be delivered.
+curl -s "http://localhost:4100/api/tickets/TICKET_ID/options" \
+  -H "Authorization: Bearer TOKEN" | jq '.exchange'
+# -> each zone carries dueCents, forfeitCents and soldOut
+```
+
+### Step 6 — What is not an upgrade
+
+12. Try to "upgrade" to a **cheaper** zone through the API.
+
+**✔️ 400.** A downgrade owes nothing, so it must not be routed through a
+payment flow that would charge 0 and still open a card page. `/exchange` does
+those; `/upgrade` refuses them.
+
+| Attempt | Result |
+|---|---|
+| `POST /tickets/:id/upgrade` to a cheaper zone | **400** — use /exchange |
+| … to a zone at the same price | **400** |
+| … to the zone it is already in | **400** |
+| … by another signed-in user | **403** |
+| … with the order link but no account | **401** |
+| … on a ticket already scanned at the gate | **409** |
+
+> 💡 The order link proves you *hold* a ticket, not that you may *spend* on
+> it — the same rule as resale and giving a ticket away (check 2).
+
+### Step 7 — Prove the gateway path end to end
+
+The browser cannot show you what happens when a payment arrives late. This
+can:
+
+```bash
+cd backend && npm run test:live:upgrade     # 30 checks, mock mode
+```
+
+With `CMI_CLIENT_ID` and `CMI_STORE_KEY` set, the gateway suite signs its own
+callbacks — no tunnel, no real card:
+
+```bash
+cd backend && npm run test:live:cmi
+```
+
+**✔️ Its "Paying to move up a zone" section proves the money only moves when
+the seat does:** the seat is reserved mid-payment, POSTAUTH moves the ticket
+without minting a second one, a replayed callback takes the money again
+without moving it twice — and when the zone fills while the buyer is paying,
+the reply is **FAILURE**, the buyer keeps their original seat, the order is
+not left looking PAID, and the organiser is not billed commission for a sale
+that never happened.
+
+✅ **Check 27 done.**
+
+---
 # ✅ Tick them off
 
 | # | Check | Where to go | Done |
@@ -2020,6 +2186,7 @@ without waiting half an hour. It deletes the event afterwards.
 | 24 | **Plans and asking for one** | Pro → **Finance** → **Offre** · admin **Plateforme** | ☐ |
 | 25 | **Who is owed what** | Pro → ADMINISTRATION → **Plateforme** → **Qui vend** | ☐ |
 | 26 | **Freed seats go to the queue** | Pro → CATALOGUE → **Offres** · **Placements** | ☐ |
+| 27 | **Moving zone, up and down** | Ticket page → **Changer de zone** / **Surclasser** | ☐ |
 
 ---
 
@@ -2038,16 +2205,17 @@ a seeded database.
 | `live-authz-test` | `npm run test:live:authz` | who may reach what, across roles | **54 / 54** |
 | `live-guest-authz-test` | `npm run test:live:guest` | the boundary around a guest's link | **38 / 38** |
 | `live-organiser-authz-test` | `npm run test:live:organiser` | each organiser capability is really enforced | **16 / 16** |
-| `live-coverage-test` | `npm run test:live:coverage` | the routes the other suites do not reach | **72 / 72** |
+| `live-coverage-test` | `npm run test:live:coverage` | the routes the other suites do not reach | **77 / 77** |
 | `live-orders-payments-test` | `npm run test:live:orders` | hold → pay → settle → refund → resell → commission → payout | **79 / 79** |
 | `live-audit-test` | `npm run test:live:audit` | the journal, and the two ways an account is removed | **46 / 46** |
 | `live-money-test` | `npm run test:live:money` | commission and payout rules on their own | all pass |
-| `live-cmi-payment-test` | `npm run test:live:cmi` | the gateway: forged, tampered and late callbacks | **20 / 20** ¹ |
+| `live-cmi-payment-test` | `npm run test:live:cmi` | the gateway: forged, tampered and late callbacks, and paying to move zone | all pass ¹ |
+| `live-upgrade-test` | `npm run test:live:upgrade` | paying the difference to move into a dearer zone — check 27 | **30 / 30** |
 | `live-share-test` | `npm run test:live:share` | giving a ticket away, and revoking the link | all pass |
 | `live-refund-webhook-test` | `npm run test:live:refund` | a back-office refund voids the tickets | all pass |
 | `live-sweeper-test` | `npm run test:live:sweeper` | lapsed holds release their seats | all pass |
 | `live-ticketing-test` | `npm run test:live:ticketing` | the buyer cap, sales windows, cancellation and comps — checks 16–19 | **32 / 32** |
-| `live-frontend-test` | `npm test` *(in `frontend/`)* | every API call the UI makes, through the Next.js proxy | **176 / 176** |
+| `live-frontend-test` | `npm test` *(in `frontend/`)* | every API call the UI makes, through the Next.js proxy | **183 / 183** |
 
 ¹ Skips cleanly unless `CMI_CLIENT_ID`/`CMI_STORE_KEY` are set — the callback is
 signature-verified, so there is nothing to test without a key.
