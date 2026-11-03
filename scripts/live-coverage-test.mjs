@@ -469,6 +469,40 @@ async function main() {
       (after.data?.event?.tiers ?? []).some((x) => x.id !== tier.id && x.spatial === true),
       "yes",
     );
+
+    /*
+     * Position beats price.
+     *
+     * Price was the only ordering, and it is wrong exactly where it matters:
+     * on derby-casa the dear side Loge came out nearer the pitch than the
+     * cheaper Tribune Honneur, which is not that stadium. planOrder is how
+     * an organiser says what the room is actually like.
+     */
+    const cheap = event.tiers.find((x) => x.id !== tier.id);
+    record("a tier has no position by default", cheap.planOrder === null, `${cheap.planOrder}`);
+
+    await expectStatus("PATCH planOrder", "PATCH", `/api/organiser/tiers/${cheap.id}`, 200, {
+      token: tokens.organiser,
+      body: { planOrder: 0 },
+    });
+    const ordered = await call("GET", `/api/events/${slug}`);
+    const placed = (ordered.data?.event?.tiers ?? []).find((x) => x.id === cheap.id);
+    record("the position reaches the public page", placed?.planOrder === 0, `${placed?.planOrder}`);
+
+    await expectStatus("clearing it is allowed", "PATCH", `/api/organiser/tiers/${cheap.id}`, 200, {
+      token: tokens.organiser,
+      body: { planOrder: null },
+    });
+    const cleared = await call("GET", `/api/events/${slug}`);
+    record(
+      "and null means fall back to price",
+      (cleared.data?.event?.tiers ?? []).find((x) => x.id === cheap.id)?.planOrder === null,
+      "null",
+    );
+    await expectStatus("a negative position is refused", "PATCH", `/api/organiser/tiers/${cheap.id}`, 400, {
+      token: tokens.organiser,
+      body: { planOrder: -1 },
+    });
   }
   // ─────────────────────────────────────────────────────────── resale ──
   setGroup("RESALE  /api/resale/*");

@@ -335,6 +335,19 @@ model TicketTier {
   /// it was until somebody says otherwise.
   spatial Boolean @default(true)
 
+  /// Where this zone sits on the plan: 0 is nearest the action, counting
+  /// back. Null means "no opinion", and those fall back to price order.
+  ///
+  /// Price was the only ordering before, and it is a decent proxy that is
+  /// wrong exactly where it matters. Mawazine's "Pass VIP Front Stage" is
+  /// both the dearest and the nearest, so price got it right by luck; a
+  /// cheap side balcony close to the stage, or a premium rear lounge, come
+  /// out backwards. The organiser is the only one who knows the room.
+  ///
+  /// Ties are broken by price, so filling this in for some zones and not
+  /// others still produces a sensible drawing rather than an arbitrary one.
+  planOrder Int? @map("plan_order")
+
   /// When this tier may be bought. Both null means "on sale as soon as the
   /// event is published", which is how every tier behaved before these
   /// existed.

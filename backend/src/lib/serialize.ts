@@ -55,6 +55,8 @@ export function publicEvent(event: EventWithTiers, remainingByTier: Record<strin
       numbered: tier.numbered,
       // Whether this tier is a place, and so belongs on the site plan.
       spatial: tier.spatial,
+      // Position on the plan, 0 = nearest the action. Null = use price.
+      planOrder: tier.planOrder,
       recommended: tier.recommended,
       saveCents: tier.saveCents,
       perks: tier.perks,

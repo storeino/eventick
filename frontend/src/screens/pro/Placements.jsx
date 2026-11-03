@@ -22,6 +22,9 @@ const BLANK = {
   capacity: 100,
   numbered: false,
   seatsPerRow: 12,
+  // Whether this tier is a PLACE, and where it sits on the plan.
+  spatial: true,
+  planOrder: "",
   // The sales window, held as date+time pairs because the pickers are
   // separate controls. Empty date = no bound on that side.
   openDate: "",
@@ -132,6 +135,9 @@ export default function Placements() {
       capacity: tier.capacity,
       numbered: tier.numbered,
       seatsPerRow: tier.seatsPerRow ?? 12,
+      spatial: tier.spatial !== false,
+      // Held as a string so the input can be emptied; sent as null.
+      planOrder: typeof tier.planOrder === "number" ? String(tier.planOrder) : "",
       openDate: opens.date,
       openTime: opens.time,
       closeDate: closes.date,
@@ -159,6 +165,10 @@ export default function Placements() {
         ...rest,
         salesStartAt: salesWindowAt(openDate, openTime),
         salesEndAt: salesWindowAt(closeDate, closeTime),
+        // Empty means "no opinion", which the plan reads as "order me by
+        // price" -- so it has to reach the server as null, not as 0 (which
+        // would mean "nearest the stage") or as "" (which is not a number).
+        planOrder: rest.planOrder === "" ? null : Number(rest.planOrder),
       };
       if (editing === "new") {
         await api.post(`/organiser/events/${slug}/tiers`, { ...payload, blurbFr: form.nameFr, blurbAr: form.nameAr });
@@ -354,6 +364,31 @@ export default function Placements() {
           <div className="sm:col-span-2">
             <CheckOption label={t.numbered} checked={form.numbered} onChange={(checked) => field("numbered", checked)} />
           </div>
+
+          {/* Where this tier sits on the public site plan — or whether it
+              belongs there at all. A pass and a balcony are both tiers; only
+              one of them is somewhere to stand. */}
+          <div className="sm:col-span-2">
+            <CheckOption label={t.tierSpatial} checked={form.spatial} onChange={(checked) => field("spatial", checked)} />
+            <p className="px-2 text-xs text-muted">{t.tierSpatialHint}</p>
+          </div>
+          {form.spatial ? (
+            <Field label={t.tierPlanOrder} hint={t.tierPlanOrderHint}>
+              {({ id, describedBy, invalid }) => (
+                <Input
+                  id={id}
+                  describedBy={describedBy}
+                  invalid={invalid}
+                  type="number"
+                  min={0}
+                  max={99}
+                  placeholder={t.tierPlanOrderAuto}
+                  value={form.planOrder}
+                  onChange={(e) => field("planOrder", e.target.value)}
+                />
+              )}
+            </Field>
+          ) : null}
           {form.numbered ? (
             <Field label={t.seatsPerRow}>
               {({ id, describedBy, invalid }) => (

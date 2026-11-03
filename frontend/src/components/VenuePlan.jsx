@@ -20,9 +20,23 @@ import { cn, eventText, groupNumber } from "../utils";
  * of numbered squares nobody can click would be worse than this.
  */
 
-/** Zones ordered from closest-to-the-action outward, by price. */
+/**
+ * Zones from closest-to-the-action outward.
+ *
+ * `planOrder` first, because the organiser is the only one who knows the
+ * room. Price is the fallback, and it is a decent proxy that is wrong
+ * exactly where it matters: a cheap side balcony near the stage, or a
+ * premium rear lounge, both come out backwards under price alone.
+ *
+ * Zones WITH a position always sit ahead of zones without one — a half-
+ * filled field should still read front-to-back, and a tier nobody placed
+ * does not belong in front of one somebody did. Ties fall back to price, so
+ * giving two zones the same number is a statement that they are side by
+ * side rather than an accident.
+ */
 function ordered(tiers) {
-  return [...tiers].sort((a, b) => b.priceCents - a.priceCents);
+  const pos = (tier) => (typeof tier.planOrder === "number" ? tier.planOrder : Number.POSITIVE_INFINITY);
+  return [...tiers].sort((a, b) => pos(a) - pos(b) || b.priceCents - a.priceCents);
 }
 
 /** The palette, cycled. Index 0 is the dearest zone, so it reads as "best". */
@@ -145,9 +159,14 @@ function StadiumPlan({ tiers, locale, t }) {
  * a line from start to finish rather than in a seating bowl.
  */
 function CoursePlan({ tiers, locale, t }) {
-  // Cheapest first here: on a course the zones are usually distances, and
-  // the short one starts nearest the front.
-  const zones = [...tiers].sort((a, b) => a.priceCents - b.priceCents);
+  /*
+   * planOrder first, as everywhere, then CHEAPEST first rather than dearest:
+   * on a course the zones are usually distances, and the short one starts
+   * nearest the front. That inversion is why this does not just call
+   * ordered().
+   */
+  const pos = (tier) => (typeof tier.planOrder === "number" ? tier.planOrder : Number.POSITIVE_INFINITY);
+  const zones = [...tiers].sort((a, b) => pos(a) - pos(b) || a.priceCents - b.priceCents);
   return (
     <div className="py-2">
       <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wide text-muted">

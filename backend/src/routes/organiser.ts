@@ -173,6 +173,8 @@ const tierInput = z.object({
   numbered: z.boolean().optional(),
   /** False for a tier that is a duration or a credential, not a place. */
   spatial: z.boolean().optional(),
+  /** 0 = nearest the action. Null clears it and falls back to price. */
+  planOrder: z.number().int().min(0).max(99).nullable().optional(),
   seatsPerRow: z.number().int().min(1).max(100).optional(),
   perks: z.array(z.string()).optional(),
   /** ISO timestamps. Both omitted means on sale whenever the event is. */
@@ -1064,6 +1066,8 @@ const tierPatchSchema = z.object({
   numbered: z.boolean().optional(),
   /** False for a tier that is a duration or a credential, not a place. */
   spatial: z.boolean().optional(),
+  /** 0 = nearest the action. Null clears it and falls back to price. */
+  planOrder: z.number().int().min(0).max(99).nullable().optional(),
   seatsPerRow: z.number().int().min(1).max(100).optional(),
   perks: z.array(z.string()).optional(),
   salesStartAt: z.string().datetime().nullish(),
