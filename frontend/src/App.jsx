@@ -8,6 +8,7 @@ import Billets from "./screens/Billets";
 import TicketDetail from "./screens/TicketDetail";
 import ClaimShare from "./screens/ClaimShare";
 import BuyResale from "./screens/BuyResale";
+import Resales from "./screens/Resales";
 import Login from "./screens/Login";
 import Organiser from "./screens/Organiser";
 import BecomeOrganiser from "./screens/BecomeOrganiser";
@@ -32,6 +33,9 @@ export default function App() {
           offer before deciding — but buying needs an account, which the
           screen asks for rather than the route. */}
       <Route path="/revente/:token" element={<BuyResale />} />
+      {/* The marketplace: every seat on resale, for someone who found a show
+          sold out and wants to know whether anyone is selling. */}
+      <Route path="/reventes" element={<Resales />} />
       <Route path="/login" element={<Login />} />
       <Route path="/organiser" element={<Organiser />} />
       <Route path="/devenir-organisateur" element={<BecomeOrganiser />} />

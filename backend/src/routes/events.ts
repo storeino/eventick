@@ -28,6 +28,90 @@ eventsRouter.get(
 );
 
 /**
+ * Every seat being resold, across every event — the resale marketplace.
+ *
+ * The per-event version below answers "is anyone reselling THIS show". This
+ * one answers the question a buyer actually arrives with: "the show I want is
+ * sold out, is anyone selling". Without it a listing is reachable only by its
+ * own link, so a resale works just like a gift — fine for a friend, useless
+ * for a stranger, and the seller's seat goes empty.
+ *
+ * Same sold-out rule as the per-event route, and for the same reason: a
+ * resale sits at face value, so surfacing one beside seats the organiser can
+ * still sell takes a sale he would have made anyway. Where a zone has sold
+ * out it is the opposite — it is the only thing standing between a buyer and
+ * a dead end.
+ *
+ * Public and unauthenticated, like the catalogue. Buying still needs an
+ * account; seeing what exists does not.
+ */
+eventsRouter.get(
+  "/resales/all",
+  asyncHandler(async (_req, res) => {
+    const listings = await prisma.resaleListing.findMany({
+      where: {
+        status: "LISTED",
+        ticket: {
+          // A seat can only be resold while it is still a live entitlement.
+          status: "VALID",
+          tier: {
+            event: {
+              status: "PUBLISHED",
+              // The organiser has to have opted in, and a show that has
+              // started cannot be sold into.
+              allowResale: true,
+              startAt: { gt: new Date() },
+            },
+          },
+        },
+      },
+      include: { ticket: { include: { tier: { include: { event: true } } } } },
+      orderBy: { createdAt: "asc" },
+    });
+
+    /*
+     * Availability is per EVENT, so it is fetched once per event rather than
+     * once per listing — two seats resold on the same show would otherwise
+     * recount the whole tier twice.
+     */
+    const byEvent = new Map();
+    for (const listing of listings) {
+      const eventId = listing.ticket.tier.eventId;
+      if (!byEvent.has(eventId)) byEvent.set(eventId, await remainingByTier(eventId));
+    }
+
+    res.json({
+      resales: listings
+        .filter((l) => (byEvent.get(l.ticket.tier.eventId)?.[l.ticket.tierId] ?? 0) <= 0)
+        .map((l) => {
+          const event = l.ticket.tier.event;
+          return {
+            id: l.id,
+            token: l.token,
+            priceCents: l.priceCents,
+            tierNameFr: l.ticket.tier.nameFr,
+            tierNameAr: l.ticket.tier.nameAr,
+            seatRow: l.ticket.seatRow,
+            seatNumber: l.ticket.seatNumber,
+            listedAt: l.createdAt.toISOString(),
+            event: {
+              slug: event.slug,
+              titleFr: event.titleFr,
+              titleAr: event.titleAr,
+              city: event.city,
+              venueFr: event.venueFr,
+              venueAr: event.venueAr,
+              image: event.image,
+              category: event.category,
+              start: event.startAt.toISOString(),
+            },
+          };
+        }),
+    });
+  }),
+);
+
+/**
  * What a waitlist claim link is offering.
  *
  * Public by design: the token IS the credential, exactly like the guest

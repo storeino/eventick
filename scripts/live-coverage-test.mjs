@@ -450,6 +450,46 @@ async function main() {
     );
     await expectStatus("GET mine/listings anonymous → 401", "GET", "/api/resale/mine/listings", 401);
 
+    /*
+     * Discovery: the two routes that let a stranger FIND a listing rather
+     * than be sent its link.
+     *
+     * Both hide listings whose zone still has seats, which is the whole
+     * design: a resale is at face value, so showing one beside inventory the
+     * organiser can still sell takes a sale he would have made anyway. This
+     * zone has 5 seats and 2 sold, so the listing must NOT appear yet.
+     */
+    const marketBefore = await expectStatus("GET /events/resales/all is public", "GET", "/api/events/resales/all", 200);
+    record(
+      "a listing on a zone with seats left is hidden",
+      !(marketBefore.data?.resales ?? []).some((r) => r.token === token),
+      `${(marketBefore.data?.resales ?? []).length} listing(s) shown`,
+    );
+    const onEventBefore = await expectStatus("GET /events/:slug/resales is public", "GET", `/api/events/${slug}/resales`, 200);
+    record(
+      "and the event page hides it too",
+      (onEventBefore.data?.resales ?? []).length === 0,
+      `${(onEventBefore.data?.resales ?? []).length} shown`,
+    );
+
+    // Sell the zone out: 5 capacity, 2 already sold, so 3 more closes it.
+    await buy(tokens.customer, slug, tierId, 3, "Remplit La Zone");
+
+    const marketAfter = await expectStatus("the marketplace lists it once the zone sells out", "GET", "/api/events/resales/all", 200);
+    const row = (marketAfter.data?.resales ?? []).find((r) => r.token === token);
+    record("the listing is now discoverable", Boolean(row), row ? "listed" : "absent");
+    record(
+      "and carries what the page renders",
+      row?.priceCents === 20000 && row?.event?.slug === slug && typeof row?.event?.start === "string",
+      `${row?.priceCents} ${row?.event?.slug}`,
+    );
+    const onEventAfter = await call("GET", `/api/events/${slug}/resales`, {});
+    record(
+      "the event page shows it too",
+      (onEventAfter.data?.resales ?? []).some((r) => r.token === token),
+      `${(onEventAfter.data?.resales ?? []).length} shown`,
+    );
+
     const offer = await expectStatus("GET /:token is public", "GET", `/api/resale/${token}`, 200);
     record(
       "the offer names the event and price",
@@ -498,12 +538,20 @@ async function main() {
       body: { holderName: "Trop Tard", email: "late@example.com", phone: "0612345678" },
     });
 
-    // Resale must not inflate the pool: 5 seats, 2 sold, 1 of them resold.
+    /*
+     * Resale must not inflate the pool.
+     *
+     * All 5 seats are sold by now -- 2 to the seller, then 3 more to close
+     * the zone for the discovery checks above -- and one of those 5 has
+     * changed hands through a resale. The resale moved a seat between owners
+     * rather than creating one, so the answer is still 0 left, not 1. This
+     * read 3 before the zone was filled; the rule it protects is the same.
+     */
     const avail = await call("GET", `/api/orders/availability/${slug}`);
     const remaining = avail.data?.remaining?.[tierId];
     record(
-      "a resold seat is still counted once (3 of 5 left)",
-      remaining === 3,
+      "a resold seat is still counted once (0 of 5 left)",
+      remaining === 0,
       `remaining=${remaining}`,
     );
 

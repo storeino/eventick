@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Calendar, Clock, Heart, MapPin, Minus, ParkingCircle, Plus, QrCode, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
@@ -35,6 +35,29 @@ export default function EventDetail() {
   // Live remaining counts, refreshed after a failed booking so the buyer sees
   // the real numbers rather than the ones the page loaded with.
   const [remaining, setRemaining] = useState(null);
+  /*
+   * Seats fans are reselling on this event.
+   *
+   * The server returns these ONLY for zones that have sold out, so this stays
+   * empty on a show with seats still on sale -- a resale sits at face value,
+   * and putting one beside the organiser's own inventory would take a sale he
+   * would have made anyway.
+   */
+  const [resales, setResales] = useState([]);
+
+  useEffect(() => {
+    if (!slug) return;
+    let alive = true;
+    api
+      .get(`/events/${slug}/resales`)
+      .then((d) => alive && setResales(d.resales ?? []))
+      // Never break the page over this: resales are an extra, and the event
+      // reads perfectly well without them.
+      .catch(() => alive && setResales([]));
+    return () => {
+      alive = false;
+    };
+  }, [slug]);
 
   /** Seats left per tier: the live figure once we've refreshed, else the one
    * the catalogue was loaded with. */
@@ -549,6 +572,29 @@ export default function EventDetail() {
                   {user || authLoading ? t("pay") : t("paySignIn")}
                 </Button>
               )}
+
+              {/*
+                Seats fans are reselling, ABOVE the waitlist.
+                A seat available now beats joining a queue for one that may
+                never come free, so offering the queue first would bury the
+                better answer. Absent entirely when there is nothing on sale.
+              */}
+              {soldOut && resales.length > 0 ? (
+                <div className="mt-5 border-t border-stage-fg/15 pt-5">
+                  <p className="text-sm font-bold">{t("resaleHereTitle")}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-stage-muted">
+                    {t("resaleHereBody").replace("{n}", String(resales.length))}
+                  </p>
+                  <Button
+                    variant="inverse"
+                    full
+                    className="mt-3"
+                    onClick={() => navigate(`/revente/${resales[0].token}`)}
+                  >
+                    {t("resaleHereCta").replace("{n}", money(resales[0].priceCents))}
+                  </Button>
+                </div>
+              ) : null}
 
               {soldOut ? (
                 <form className="mt-5 grid gap-2 border-t border-stage-fg/15 pt-5" onSubmit={joinWaitlist}>
