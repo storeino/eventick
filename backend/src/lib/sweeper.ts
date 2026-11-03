@@ -27,10 +27,33 @@ let running = false;
 export async function sweepOnce(): Promise<{ expired: number; reoffered: number }> {
   const expired = await expireStaleOffers();
 
+  // Stale PENDING orders hold nothing (availability ignores a lapsed
+  // holdUntil), but leaving them PENDING forever makes the organiser's order
+  // list unreadable and hides which carts were genuinely abandoned.
+  //
+  // Done BEFORE the re-offer below, not after: cancelling these is itself a
+  // way seats come back, so offering first would miss them for a whole sweep
+  // interval.
+  const abandoned = await prisma.order.updateMany({
+    where: { status: "PENDING", holdUntil: { lt: new Date() } },
+    data: { status: "CANCELLED", holdUntil: null },
+  });
+
   let reoffered = 0;
-  if (expired > 0) {
-    // Those seats are free again. Offer them to whoever is still waiting on
-    // the events that had a lapsed offer — not every event in the database.
+  /*
+   * Re-offer after EITHER a lapsed offer or an abandoned cart.
+   *
+   * It used to run only when `expired > 0`, which missed the abandoned case
+   * entirely — and that is the one a real CMI checkout produces. The offer is
+   * marked CLAIMED when the buyer leaves for the gateway (it must not stay
+   * claimable while they are there), so a buyer who never pays leaves a seat
+   * that is no longer offered to anyone and no longer held by them. Nothing
+   * put it back in front of the queue until some unrelated offer happened to
+   * lapse on the same event.
+   */
+  if (expired > 0 || abandoned.count > 0) {
+    // Only events that still have somebody waiting — not every event in the
+    // database.
     const events = await prisma.waitlistEntry.findMany({
       where: { status: "WAITING" },
       select: { eventId: true },
@@ -41,14 +64,6 @@ export async function sweepOnce(): Promise<{ expired: number; reoffered: number 
       reoffered += result.offered;
     }
   }
-
-  // Stale PENDING orders hold nothing (availability ignores a lapsed
-  // holdUntil), but leaving them PENDING forever makes the organiser's order
-  // list unreadable and hides which carts were genuinely abandoned.
-  const abandoned = await prisma.order.updateMany({
-    where: { status: "PENDING", holdUntil: { lt: new Date() } },
-    data: { status: "CANCELLED", holdUntil: null },
-  });
 
   if (expired > 0 || reoffered > 0 || abandoned.count > 0) {
     logger.info({ expired, reoffered, abandoned: abandoned.count }, "sweep complete");

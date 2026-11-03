@@ -59,6 +59,34 @@ export async function remainingByTier(eventId: string): Promise<Record<string, n
     committed.set(line.tierId, (committed.get(line.tierId) ?? 0) + line.qty);
   }
 
+  /*
+   * A seat offered to someone on the waitlist is spoken for.
+   *
+   * routes/orders.ts already subtracts these before letting a hold through,
+   * so the seat was never actually sellable — but this function feeds the
+   * public catalogue, which did not, and the two disagreed. A sold-out event
+   * whose only free seat had just been offered to the queue advertised
+   * "1 remaining", and anyone who clicked Book got "Not enough tickets
+   * remaining". Verified against a capacity-1 event before this was added.
+   *
+   * The claimant is not credited a seat back here the way the hold path does
+   * it: this is the view a stranger sees, and the person holding the offer
+   * reaches their seat through the claim link, not the catalogue.
+   */
+  const offers = await prisma.waitlistEntry.groupBy({
+    by: ["claimTierId"],
+    where: {
+      claimTierId: { in: tiers.map((tier) => tier.id) },
+      status: "OFFERED",
+      claimExpiresAt: { gt: new Date() },
+    },
+    _count: { _all: true },
+  });
+  for (const offer of offers) {
+    if (!offer.claimTierId) continue;
+    committed.set(offer.claimTierId, (committed.get(offer.claimTierId) ?? 0) + offer._count._all);
+  }
+
   const result: Record<string, number> = {};
   for (const tier of tiers) {
     result[tier.id] = tierRemaining(tier.capacity, committed.get(tier.id) ?? 0);

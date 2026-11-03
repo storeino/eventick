@@ -526,10 +526,20 @@ async function main() {
       `order=${after.data?.order?.status} tickets=${after.data?.order?.tickets?.map((t) => t.status).join(",")}`,
     );
 
+    /*
+     * 3, not 4: four seats came back, and one was immediately OFFERED to the
+     * person who joined the waitlist above — which the check further down
+     * asserts. The public figure has to exclude it, or the catalogue
+     * advertises a seat the purchase path will refuse.
+     *
+     * This expected 4 and passed while availability ignored outstanding
+     * offers, so the suite was asserting both "all four are on sale" and "one
+     * is reserved for the queue" at once.
+     */
     const freed = await call("GET", `/api/orders/availability/${slug}`);
     record(
-      "cancelling returned the seats to the pool",
-      freed.data?.remaining?.[tierId] === 4,
+      "cancelling returned the seats to the pool, less the one offered to the queue",
+      freed.data?.remaining?.[tierId] === 3,
       `remaining=${freed.data?.remaining?.[tierId]}`,
     );
 
