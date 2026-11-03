@@ -107,16 +107,16 @@ export default function Resales() {
           ) : null}
 
           <div className="mt-4">
-            <DataTable minWidth={820}>
+            <DataTable minWidth={maySeeAllOrganisers ? 1040 : 820}>
               <thead>
                 <tr>
                   <Th>{t.eventCol}</Th>
                   {maySeeAllOrganisers ? <Th>{t.organiserCol}</Th> : null}
                   <Th>{t.compZone}</Th>
-                  <Th>{t.ticketColumn}</Th>
-                  <Th>{t.resalesPrice}</Th>
-                  <Th>{t.resalesListedOn}</Th>
-                  <Th className="text-end">{t.statusCol}</Th>
+                  <Th className="w-px whitespace-nowrap">{t.ticketColumn}</Th>
+                  <Th className="w-px whitespace-nowrap">{t.resalesPrice}</Th>
+                  <Th className="w-px whitespace-nowrap">{t.resalesListedOn}</Th>
+                  <Th className="w-px whitespace-nowrap text-end">{t.statusCol}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -139,12 +139,12 @@ export default function Resales() {
                       {eventText({ nameFr: r.tierNameFr, nameAr: r.tierNameAr }, "name", locale)}
                       {r.seatRow ? ` · ${r.seatRow}${r.seatNumber ?? ""}` : ""}
                     </Td>
-                    <Td className="font-mono text-xs">{r.ticketRef}</Td>
-                    <Td className="tabular-nums">{money(r.priceCents)} MAD</Td>
-                    <Td className="text-xs text-muted">
+                    <Td className="w-px whitespace-nowrap font-mono text-xs">{r.ticketRef}</Td>
+                    <Td className="w-px whitespace-nowrap tabular-nums">{money(r.priceCents)} MAD</Td>
+                    <Td className="w-px whitespace-nowrap text-xs text-muted">
                       {new Date(r.createdAt).toLocaleDateString(intlLocaleTag(locale), { dateStyle: "medium" })}
                     </Td>
-                    <Td className="text-end">
+                    <Td className="w-px whitespace-nowrap text-end">
                       <Badge tone={TONE[r.status] ?? "neutral"}>
                         {r.status === "SOLD" ? t.resalesStatusSold : r.status === "LISTED" ? t.resalesStatusListed : t.resalesStatusCancelled}
                       </Badge>

@@ -95,7 +95,12 @@ export function Badge({ tone = "neutral", icon, children, className }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold",
+        // whitespace-nowrap: a badge is a short status label, never a
+        // sentence. Without it "On sale" broke across two lines in a narrow
+        // table column and the pill wrapped around them, which reads as a
+        // squashed button rather than a status. None of the 42 call sites
+        // carry text that wants wrapping.
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold",
         TONES[tone],
         className,
       )}
