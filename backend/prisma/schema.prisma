@@ -70,6 +70,7 @@ model User {
   orders   Order[]
   listings ResaleListing[]
   shares   TicketShare[]
+  upgrades TicketUpgrade[]
   /// Tickets held without having bought them — a share claimed from someone
   /// else's order. Named, because Ticket reaches User twice (buyer via order,
   /// holder directly).
@@ -291,6 +292,9 @@ model TicketTier {
   event       Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
   orderLines  OrderLine[]
   tickets     Ticket[]
+  /// Upgrades moving INTO this zone. Named because the upgrade's own
+  /// fromTierId is a plain column, not a relation.
+  upgradesIn  TicketUpgrade[] @relation("UpgradeTarget")
   invitations Invitation[]
 
   @@index([eventId])
@@ -396,6 +400,9 @@ model Order {
   lines       OrderLine[]
   tickets     Ticket[]
   payoutOrder PayoutOrder?
+  /// Set when this order exists to pay for a zone upgrade rather than to
+  /// buy seats. Such an order carries a held line but never its own ticket.
+  upgrade     TicketUpgrade?
 
   @@index([customerId])
   @@index([eventId])
@@ -489,6 +496,7 @@ model Ticket {
   tier       TicketTier     @relation(fields: [tierId], references: [id], onDelete: Restrict)
   resale     ResaleListing?
   shares     TicketShare[]
+  upgrades   TicketUpgrade[]
   invitation Invitation?
 
   @@index([orderId])
@@ -624,6 +632,63 @@ enum ResaleStatus {
   /// Bought; the seller has been refunded and a new ticket issued.
   SOLD
   /// Withdrawn by the seller, or voided because the ticket changed state.
+  CANCELLED
+}
+
+/// A holder paying the difference to move their seat into a dearer zone.
+///
+/// Mirrors ResaleListing deliberately: both take money through CMI for
+/// something that is NOT fresh tier inventory, so both need a row the
+/// gateway callback can find from the order reference alone — CMI echoes
+/// back nothing else. Without it an upgrade would settle through
+/// settleOrder and issue a SECOND ticket instead of moving the first.
+///
+/// Downgrades never create one of these. They move the seat immediately and
+/// refund nothing, so there is no payment to track.
+model TicketUpgrade {
+  id       String        @id @default(cuid())
+  ticketId String        @map("ticket_id")
+  buyerId  String?       @map("buyer_id")
+  status   UpgradeStatus @default(PENDING)
+
+  /// Where it is going, and what the move costs.
+  ///
+  /// The price is frozen here at the moment the upgrade is started, for the
+  /// same reason ResaleListing freezes face value: the organiser may reprice
+  /// a zone while the buyer is away at the gateway, and the amount CMI
+  /// authorises must be the amount that was quoted and agreed.
+  targetTierId String @map("target_tier_id")
+  fromTierId   String @map("from_tier_id")
+  dueCents     Int    @map("due_cents")
+
+  /// The order paying for it. Set at creation, before the buyer leaves, and
+  /// unique so a replayed callback cannot settle two upgrades against one
+  /// payment. It carries an OrderLine for the TARGET tier, which is what
+  /// holds the seat while the buyer is on CMI's page.
+  orderId String @unique @map("order_id")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+  closedAt    DateTime? @map("closed_at")
+
+  ticket     Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  buyer      User?      @relation(fields: [buyerId], references: [id], onDelete: SetNull)
+  targetTier TicketTier @relation("UpgradeTarget", fields: [targetTierId], references: [id], onDelete: Restrict)
+  /// Cascade: the upgrade only exists to describe this payment, so a deleted
+  /// order leaves nothing worth keeping.
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([ticketId])
+  @@map("ticket_upgrades")
+}
+
+enum UpgradeStatus {
+  /// Payment started; the seat is held by the order's line.
+  PENDING
+  /// Paid, and the ticket has moved.
+  DONE
+  /// Abandoned, refused, or the zone filled while the buyer was paying.
   CANCELLED
 }
 

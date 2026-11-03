@@ -23,6 +23,7 @@
     "test:live:cmi": "tsx ../scripts/live-cmi-payment-test.mjs",
     "test:live:money": "tsx ../scripts/live-money-test.mjs",
     "test:live:refunds": "tsx ../scripts/live-refund-policy-test.mjs",
+    "test:live:upgrade": "tsx ../scripts/live-upgrade-test.mjs",
     "test:live:orders": "tsx ../scripts/live-orders-payments-test.mjs",
     "test:live:audit": "tsx ../scripts/live-audit-test.mjs",
     "test:live:ticketing": "tsx ../scripts/live-ticketing-test.mjs",

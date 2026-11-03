@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Copy, Download, Pencil, Printer, Share2, Tag, Ticket as TicketIcon, UserPlus } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import CmiRedirect from "./CmiRedirect";
 import { QrMark } from "../components/QrMark";
 import { Shell } from "../components/Shell";
 import { toast } from "sonner";
@@ -25,6 +26,13 @@ export default function TicketDetail() {
   const [shareMessage, setShareMessage] = useState("");
   const [renaming, setRenaming] = useState(null);
   const [confirmZone, setConfirmZone] = useState(null);
+  /* The upgrade being paid for: the chosen zone, then the CMI form once the
+     server has created the order and reserved the seat. */
+  const [upgrade, setUpgrade] = useState(null);
+  const [upgradeCmi, setUpgradeCmi] = useState(null);
+  const [payName, setPayName] = useState("");
+  const [payEmail, setPayEmail] = useState("");
+  const [payPhone, setPayPhone] = useState("");
 
   const load = useCallback(() => {
     // A share recipient opening this link on another device has their token
@@ -139,6 +147,67 @@ export default function TicketDetail() {
       toast.error(err.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  /*
+   * Upgrading into a dearer zone, which costs the difference.
+   *
+   * Deliberately NOT part of changeZone: that one answers immediately,
+   * while this creates an order, reserves the seat and hands the buyer to
+   * CMI. The seat is held from the moment the server answers, so leaving
+   * this dialog without paying should release it rather than let it sit for
+   * the full 15 minutes -- see closeUpgrade.
+   */
+  /* Open the pay-the-difference dialog, prefilled from the order so most
+     buyers only have to press the button. */
+  const openUpgrade = (zone) => {
+    if (busy) return;
+    setPayName(data?.ticket?.holderName ?? user?.name ?? "");
+    setPayEmail(user?.email ?? "");
+    setPayPhone("");
+    setUpgradeCmi(null);
+    setUpgrade({ tierId: zone.tierId, dueCents: zone.dueCents, name: eventText(zone, "name", locale) });
+  };
+
+  const startUpgrade = async (event) => {
+    event.preventDefault();
+    if (busy || !upgrade) return;
+    setBusy(true);
+    try {
+      const res = await api.post(`/tickets/${ticketId}/upgrade`, {
+        tierId: upgrade.tierId,
+        holderName: payName.trim(),
+        email: payEmail.trim(),
+        phone: payPhone.trim(),
+        locale,
+      });
+      if (res.mode === "mock") {
+        // No gateway configured: the server settled it outright.
+        setUpgrade(null);
+        toast.success(t("zoneChanged"));
+        load();
+        return;
+      }
+      setUpgradeCmi({ ...res, upgradeId: res.upgradeId });
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /*
+   * Backing out. If an order was already created, its line is holding a seat
+   * in the target zone, so tell the server to let it go -- otherwise a
+   * browsed-away dialog keeps a dear seat off sale for fifteen minutes.
+   */
+  const closeUpgrade = () => {
+    const pending = upgradeCmi?.upgradeId;
+    setUpgrade(null);
+    setUpgradeCmi(null);
+    if (pending) {
+      api.post(`/tickets/upgrades/${pending}/abandon`, {}).catch(() => {});
     }
   };
 
@@ -492,7 +561,7 @@ export default function TicketDetail() {
                       key={z.tierId}
                       className={cn(
                         "flex items-center justify-between gap-3 rounded-control bg-paper px-3.5 py-2.5",
-                        (z.soldOut || z.dueCents > 0) && "opacity-60",
+                        z.soldOut && "opacity-60",
                       )}
                     >
                       <span className="min-w-0">
@@ -513,12 +582,21 @@ export default function TicketDetail() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => changeZone(z.tierId, z.forfeitCents ?? 0)}
-                        // An upgrade owes money, which this page cannot yet
-                        // collect — the server refuses it, so don't offer it.
-                        disabled={busy || z.soldOut || z.dueCents > 0}
+                        onClick={() =>
+                          z.dueCents > 0
+                            ? openUpgrade(z)
+                            : changeZone(z.tierId, z.forfeitCents ?? 0)
+                        }
+                        // Upgrading now works: it opens a payment dialog
+                        // rather than moving the seat, so only a full zone
+                        // and an in-flight request disable it.
+                        disabled={busy || z.soldOut || !options.viaSession}
                       >
-                        {z.soldOut ? t("zoneSoldOut") : t("changeZone")}
+                        {z.soldOut
+                          ? t("zoneSoldOut")
+                          : z.dueCents > 0
+                            ? t("zoneUpgrade")
+                            : t("changeZone")}
                       </Button>
                     </li>
                   ))}
@@ -576,6 +654,68 @@ export default function TicketDetail() {
           </Card>
         ) : null}
       </Container>
+
+      {/*
+        Paying to move up a zone.
+        Two states in one dialog: the contact form, then CMI's hand-off once
+        the server has created the order and reserved the seat. Closing it
+        releases that seat rather than leaving it held.
+      */}
+      <Modal
+        open={upgrade !== null}
+        onClose={closeUpgrade}
+        title={t("zoneUpgrade")}
+        size="sm"
+        footer={
+          upgradeCmi ? null : (
+            <>
+              <Button variant="secondary" onClick={closeUpgrade}>
+                {t("cancel")}
+              </Button>
+              <Button
+                type="submit"
+                form="upgrade-form"
+                loading={busy}
+                disabled={payName.trim().length < 3 || !payEmail.trim() || !payPhone.trim()}
+              >
+                {t("zoneUpgradeCta").replace("{n}", money(upgrade?.dueCents ?? 0))}
+              </Button>
+            </>
+          )
+        }
+      >
+        <div className="rounded-control border border-primary/20 bg-primary/10 p-3.5">
+          <p className="text-sm text-muted">{t("zoneUpgradeTo").replace("{z}", upgrade?.name ?? "")}</p>
+          <p className="font-display text-heading font-extrabold leading-none tabular-nums">
+            {money(upgrade?.dueCents ?? 0)} <span className="text-sm font-bold text-muted">MAD</span>
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-muted">{t("zoneUpgradeNote")}</p>
+        </div>
+
+        {upgradeCmi ? (
+          <div className="mt-4">
+            <CmiRedirect
+              action={upgradeCmi.action}
+              fields={upgradeCmi.fields}
+              dueCents={upgrade?.dueCents ?? 0}
+              // Leaving on purpose: do NOT release the seat we are paying for.
+              onLeave={() => setUpgradeCmi((c) => ({ ...c, upgradeId: null }))}
+            />
+          </div>
+        ) : (
+          <form id="upgrade-form" className="mt-4 grid gap-3" onSubmit={startUpgrade}>
+            <Field label={t("fullName")} required>
+              {(props) => <Input {...props} value={payName} onChange={(e) => setPayName(e.target.value)} autoComplete="name" />}
+            </Field>
+            <Field label={t("email")} required>
+              {(props) => <Input {...props} type="email" value={payEmail} onChange={(e) => setPayEmail(e.target.value)} autoComplete="email" />}
+            </Field>
+            <Field label={t("phone")} required>
+              {(props) => <Input {...props} value={payPhone} onChange={(e) => setPayPhone(e.target.value)} autoComplete="tel" />}
+            </Field>
+          </form>
+        )}
+      </Modal>
 
       {/* Agreeing to a forfeit. Danger-coloured because, unlike everything
           else on this page, confirming it loses the holder money. */}

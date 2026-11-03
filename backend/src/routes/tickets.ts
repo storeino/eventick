@@ -2,14 +2,18 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError, param } from "../lib/http.js";
-import { authenticate, optionalAuth } from "../middleware/auth.js";
+import { authenticate, optionalAuth, refuseStaffPurchase } from "../middleware/auth.js";
 import { publicTicket } from "../lib/serialize.js";
 import { renderTicketsPdf } from "../lib/ticket-pdf.js";
 import { committedForTier } from "../lib/availability.js";
 import { ticketPayload } from "../lib/ticket-signature.js";
 import { exchangeTicket, renameHolder } from "../lib/ticket-admin.js";
+import { cancelUpgrade, completeUpgrade, startUpgrade } from "../lib/upgrade.js";
+import { buildPaymentRequest, cmiConfig, cmiUrls, isMockPayments } from "../lib/cmi.js";
+import { phoneOk, makePaymentRef } from "../lib/payment-sim.js";
+import { recordCommission } from "../lib/settle.js";
 import { shareTicket } from "../lib/share.js";
-import { authoriseOrderOrOrganiser, presentedToken, requireTicketAccess, tokenMatchesTicket } from "../lib/order-access.js";
+import { authoriseOrderOrOrganiser, presentedToken, requireTicketAccess, requireTicketAccessWithSession, tokenMatchesTicket } from "../lib/order-access.js";
 
 export const ticketsRouter = Router();
 
@@ -273,8 +277,11 @@ ticketsRouter.post(
     const target = await prisma.ticketTier.findUnique({ where: { id: body.tierId } });
     if (!target) throw new HttpError(404, "Zone not found");
 
-    // An upgrade owes money. Until that is collected through CMI the
-    // exchange must not happen, so refuse rather than silently give it away.
+    // An upgrade owes money, which this route cannot collect: it answers
+    // immediately, and taking a card payment means sending the buyer to CMI
+    // and settling on the callback. POST /:id/upgrade does that. Refusing
+    // here rather than moving the seat is the point -- the alternative is
+    // giving away the difference.
     const dueCents = target.priceCents - ticket.tier.priceCents;
     if (dueCents > 0) {
       throw new HttpError(402, `An upgrade to this zone costs ${(dueCents / 100).toFixed(2)} MAD more`);
@@ -282,6 +289,105 @@ ticketsRouter.post(
 
     const result = await exchangeTicket(ticket.id, body.tierId);
     res.json(result);
+  }),
+);
+
+const upgradeSchema = z.object({
+  tierId: z.string(),
+  holderName: z.string().min(3),
+  email: z.string().email(),
+  phone: z.string(),
+  /** Which language CMI should render its hosted card page in. */
+  locale: z.enum(["fr", "en", "ar"]).optional(),
+});
+
+/**
+ * Move a ticket into a DEARER zone, paying the difference.
+ *
+ * The paid sibling of /exchange, which handles every move that owes nothing.
+ * Split rather than branching inside one route because the two have
+ * different shapes: an exchange answers with the moved ticket, while this
+ * answers with a payment form and only moves the seat once the gateway
+ * callback confirms the money.
+ *
+ * Requires a real account, like every other route that takes payment: a
+ * confirmation link proves someone holds a ticket, not that they may spend
+ * on it.
+ */
+ticketsRouter.post(
+  "/:id/upgrade",
+  authenticate,
+  refuseStaffPurchase,
+  asyncHandler(async (req, res) => {
+    const body = upgradeSchema.parse(req.body);
+    if (!phoneOk(body.phone)) throw new HttpError(400, "Invalid phone number");
+
+    // Ownership, not just access: the session must own the order. A shared
+    // ticket link must not let the recipient spend the holder's money.
+    const ticket = await requireTicketAccessWithSession(req, param(req, "id"));
+
+    const started = await startUpgrade(ticket.id, body.tierId, {
+      id: req.user!.id,
+      holderName: body.holderName.trim(),
+      email: body.email.trim(),
+      phone: body.phone.trim(),
+    });
+
+    if (isMockPayments()) {
+      await prisma.order.update({
+        where: { id: started.orderId },
+        data: { status: "PAID", paymentRef: makePaymentRef(), cardBank: "Démo" },
+      });
+      // An upgrade is a sale of the difference, so the platform takes its cut
+      // on that amount. This path sets PAID directly rather than going
+      // through settleOrder, so the fee has to be recorded explicitly.
+      await recordCommission(prisma, started.orderId);
+      const moved = await completeUpgrade(started.upgradeId);
+      return res.json({ mode: "mock", settled: true, orderId: started.orderId, ...moved });
+    }
+
+    const config = cmiConfig()!;
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: started.orderId } });
+    const request = buildPaymentRequest(
+      {
+        reference: order.id,
+        totalCents: order.totalCents,
+        email: order.email,
+        holderName: order.holderName,
+        phone: order.phone,
+        locale: body.locale,
+        // Back to the ticket they are upgrading, not to a confirmation page
+        // for an order that holds no tickets of its own.
+        ...cmiUrls(order.id, order.accessToken, body.locale, `/billet/${ticket.id}?surclassement=ok`),
+      },
+      config,
+    );
+
+    res.json({
+      mode: "cmi",
+      orderId: order.id,
+      // So the screen can release the held seat if the buyer backs out
+      // instead of leaving it reserved until the sweeper runs.
+      upgradeId: started.upgradeId,
+      dueCents: started.dueCents,
+      action: request.action,
+      fields: request.fields,
+    });
+  }),
+);
+
+/** Give up an upgrade the buyer started and did not pay for, so the seat it
+ * is holding goes back on sale now rather than when the sweeper runs. */
+ticketsRouter.post(
+  "/upgrades/:upgradeId/abandon",
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const upgradeId = param(req, "upgradeId");
+    const upgrade = await prisma.ticketUpgrade.findUnique({ where: { id: upgradeId } });
+    if (!upgrade) throw new HttpError(404, "Upgrade not found");
+    if (upgrade.buyerId !== req.user!.id) throw new HttpError(403, "This upgrade is not yours");
+    await cancelUpgrade(upgradeId);
+    res.status(204).end();
   }),
 );
 

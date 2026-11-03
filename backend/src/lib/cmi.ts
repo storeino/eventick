@@ -288,15 +288,31 @@ function baseUrl(value: string | undefined, fallback: string): string {
  * they may read. The locale prefix is allowlisted, never passed through: it
  * reaches CMI and comes back as a redirect target.
  */
-export function cmiUrls(orderId: string, accessToken?: string | null, locale?: string | null) {
+export function cmiUrls(
+  orderId: string,
+  accessToken?: string | null,
+  locale?: string | null,
+  /*
+   * Where to land on success, when a confirmation page is the wrong place.
+   *
+   * An upgrade's order holds no tickets of its own — it buys a move, not a
+   * seat — so /confirmation/:orderId would show the buyer an order with
+   * nothing in it. Given as a path, never a full URL: it is joined to our own
+   * origin here, so a caller cannot turn the OK redirect into an open one.
+   */
+  successPath?: string | null,
+) {
   const app = baseUrl(process.env.PUBLIC_APP_URL, "http://localhost:3100");
   const api = baseUrl(process.env.PUBLIC_API_URL, "http://localhost:4100");
   const key = accessToken ? `?k=${encodeURIComponent(accessToken)}` : "";
   const prefix = LOCALE_PREFIXES.has(locale ?? "") ? `/${locale}` : "";
+  const ok = successPath && successPath.startsWith("/") && !successPath.startsWith("//")
+    ? `${app}${prefix}${successPath}`
+    : `${app}${prefix}/confirmation/${orderId}${key}`;
 
   return {
     callbackUrl: process.env.CMI_CALLBACK_URL ?? `${api}/api/webhooks/cmi`,
-    okUrl: `${app}${prefix}/confirmation/${orderId}${key}`,
+    okUrl: ok,
     failUrl: `${app}${prefix}/paiement?echec=1&commande=${encodeURIComponent(orderId)}`,
   };
 }

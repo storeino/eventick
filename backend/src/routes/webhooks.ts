@@ -4,6 +4,7 @@ import { asyncHandler } from "../lib/http.js";
 import { cmiConfig, isApproved, orderIdFromOid, verifyCallbackHash } from "../lib/cmi.js";
 import { OversoldError, recordCommission, settleOrder } from "../lib/settle.js";
 import { completeResale } from "../lib/resale.js";
+import { cancelUpgrade, completeUpgrade } from "../lib/upgrade.js";
 import { logger } from "../lib/logger.js";
 
 export const webhooksRouter = Router();
@@ -106,6 +107,68 @@ webhooksRouter.post(
      * made from the order's actual state afterwards, never from that flag.
      */
     const deliver = async (): Promise<boolean> => {
+      /*
+       * An upgrade pays the DIFFERENCE to move an existing ticket into a
+       * dearer zone. Like a resale it buys no fresh inventory, so it must not
+       * go through settleOrder — that would issue a second ticket against
+       * tier stock instead of moving the one they already hold.
+       */
+      const upgrade = await prisma.ticketUpgrade.findUnique({
+        where: { orderId: order.id },
+        select: { id: true, status: true, ticketId: true },
+      });
+
+      if (upgrade) {
+        const claimed = await prisma.order.updateMany({
+          where: { id: order.id, status: "PENDING" },
+          data: { status: "PAID", paymentRef: gatewayRef, gatewayRef },
+        });
+        if (claimed.count === 0) {
+          // Not PENDING any more: either a retry of a move we already made,
+          // or an attempt that was cancelled while the buyer was at the
+          // gateway. DONE is the only state in which they got what they paid
+          // for, so it is the only one that may keep the money.
+          const done = await prisma.ticketUpgrade.findUnique({
+            where: { id: upgrade.id },
+            select: { status: true },
+          });
+          return done?.status === "DONE";
+        }
+        try {
+          // An upgrade is a sale of the difference, so the platform takes its
+          // cut on that amount. This branch sets PAID itself rather than
+          // going through settleOrder, so the fee would otherwise be lost.
+          await recordCommission(prisma, order.id);
+          // Guarded on PENDING inside, so a replay moves the seat once. It
+          // throws if the ticket was used or given away, or if the zone
+          // filled while this buyer was paying -- none of which may keep
+          // their money.
+          await completeUpgrade(upgrade.id);
+          return true;
+        } catch (err) {
+          logger.error(
+            { err, upgradeId: upgrade.id, orderId: order.id },
+            "CMI upgrade could not be completed — refusing the payment",
+          );
+          /*
+           * Undo everything this callback did, so the order does not look
+           * paid for a move that never happened: the PAID flip, the gateway
+           * reference, and the commission (which would otherwise bill the
+           * organiser for a sale that did not occur, and would stop
+           * recordCommission re-pricing the order on a retry).
+           *
+           * The upgrade row is closed too, releasing the seat it was holding
+           * — the zone was dear enough that somebody is likely waiting.
+           */
+          await prisma.order.updateMany({
+            where: { id: order.id, gatewayRef },
+            data: { status: "PENDING", paymentRef: null, gatewayRef: null, feeCents: null, feePlanKey: null },
+          });
+          await cancelUpgrade(upgrade.id);
+          return false;
+        }
+      }
+
       // A resale buys one existing seat rather than fresh tier inventory, so
       // it settles through completeResale, not settleOrder. The listing was
       // linked to this order before the buyer left for the gateway.
