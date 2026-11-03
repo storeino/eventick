@@ -114,10 +114,35 @@ async function makeEvent(capacity, label) {
   return { event, tier: event.tiers[0] };
 }
 
+/*
+ * The buyer account these holds are placed as.
+ *
+ * Buying used to be open to anyone, so this suite held seats anonymously.
+ * Then an account became required to buy a ticket, and every hold here
+ * started coming back 401 -- which surfaced only as `undefined` order ids
+ * much further down, not as a failed check. Logging in is now part of
+ * setup, and holdToken is asserted before anything uses it.
+ */
+let holdToken = null;
+
+async function signInBuyer() {
+  const res = await fetch(`${API}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "client@eventick.ma", password: "eventick-client-2026" }),
+  });
+  const data = await res.json();
+  holdToken = data.token ?? null;
+  return holdToken;
+}
+
 async function hold(slug, tierId, qty = 1) {
   const res = await fetch(`${API}/api/orders/hold`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(holdToken ? { Authorization: `Bearer ${holdToken}` } : {}),
+    },
     body: JSON.stringify({ eventSlug: slug, lines: [{ tierId, qty }] }),
   });
   const data = await res.json();
@@ -135,7 +160,43 @@ const ticketsFor = (orderId) => prisma.ticket.count({ where: { orderId } });
 const statusOf = async (orderId) =>
   (await prisma.order.findUnique({ where: { id: orderId }, select: { status: true } }))?.status;
 
+/*
+ * Clear anything an earlier run left behind.
+ *
+ * Cleanup runs only at the END and only on the success path, so a crash
+ * mid-run orphans PUBLISHED events with no organiser -- which then show in
+ * the public catalogue and fail the "every event has a seller" checks in
+ * other suites. Purging on the way IN survives a crash; purging on the way
+ * out does not.
+ */
+async function purgeStale() {
+  const stale = await prisma.event.findMany({
+    where: { slug: { startsWith: "cmi-live-" } },
+    select: { id: true },
+  });
+  for (const { id } of stale) {
+    const tiers = await prisma.ticketTier.findMany({ where: { eventId: id }, select: { id: true } });
+    const tierIds = tiers.map((t) => t.id);
+    await prisma.ticketUpgrade.deleteMany({ where: { ticket: { tierId: { in: tierIds } } } });
+    await prisma.resaleListing.deleteMany({ where: { ticket: { tierId: { in: tierIds } } } });
+    await prisma.ticketShare.deleteMany({ where: { ticket: { tierId: { in: tierIds } } } });
+    await prisma.ticket.deleteMany({ where: { tierId: { in: tierIds } } });
+    await prisma.orderLine.deleteMany({ where: { tierId: { in: tierIds } } });
+    await prisma.order.deleteMany({ where: { eventId: id } });
+    await prisma.ticketTier.deleteMany({ where: { eventId: id } });
+    await prisma.event.delete({ where: { id } });
+  }
+  return stale.length;
+}
+
 async function main() {
+  const purged = await purgeStale();
+  if (purged > 0) console.log(`  [2mcleared ${purged} event(s) from an earlier run[0m`);
+
+  // Holding seats needs an account now. Checked here rather than left to
+  // fail as an undefined order id three sections later.
+  check("(setup) the buyer signs in", Boolean(await signInBuyer()), holdToken ? "ok" : "no token");
+
   // ── The ordinary case still works ───────────────────────────────────────
   console.log("\n\x1b[1mA payment that arrives in time\x1b[0m");
   {
@@ -206,9 +267,11 @@ async function main() {
       data: { ticketId: sellerTicket.id, priceCents: tier.priceCents, token: `lt-${SUFFIX}`, status: "LISTED" },
     });
 
+    // Buying a resold seat needs an account too, for the same reason a
+    // normal hold does -- see signInBuyer.
     const res = await fetch(`${API}/api/resale/${listing.token}/buy`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${holdToken}` },
       body: JSON.stringify({ holderName: "Resale Buyer", email: "rb@eventick.ma", phone: "0612345679" }),
     });
     const buy = await res.json();
@@ -265,11 +328,169 @@ async function main() {
     check("an unsuffixed oid still resolves", plain === "FAILURE", plain);
   }
 
+  // ═══ Upgrading a seat: the money only moves if the seat does ════
+  console.log("\n\x1b[1mPaying to move up a zone\x1b[0m");
+  {
+    /*
+     * An upgrade is the third thing that can be bought through CMI, and the
+     * only one that moves an EXISTING ticket rather than issuing a new one.
+     * Its callback branch therefore has its own way to go wrong: settle
+     * through settleOrder and the buyer gets a second ticket instead of a
+     * better seat.
+     *
+     * mock mode cannot exercise any of this -- it settles in-process without
+     * a callback at all -- so these are the checks that only exist here.
+     */
+    const upStart = new Date(Date.now() + 30 * 86_400_000);
+    const upEvent = await prisma.event.create({
+      data: {
+        slug: `cmi-live-${SUFFIX}-upgrade`,
+        titleFr: "CMI live upgrade", titleAr: "\u062a\u0631\u0642\u064a\u0629",
+        category: "concert", city: "Casablanca",
+        venueFr: "Salle", venueAr: "\u0642\u0627\u0639\u0629", address: "1 rue",
+        startAt: upStart, endAt: upStart, doorsAt: upStart,
+        image: "x.jpg",
+        blurbFr: "b", blurbAr: "\u0628", aboutFr: "a", aboutAr: "\u0623", ageFr: "+18", ageAr: "+18",
+        status: "PUBLISHED", maxPerBuyer: 0,
+        tiers: {
+          create: [
+            { nameFr: "Gradin", nameAr: "\u0645\u062f\u0631\u062c", blurbFr: "b", blurbAr: "\u0628", priceCents: 20000, capacity: 5, zoneFr: "G", zoneAr: "\u062c", gateFr: "1", gateAr: "1" },
+            { nameFr: "Fosse", nameAr: "\u062d\u0644\u0628\u0629", blurbFr: "b", blurbAr: "\u0628", priceCents: 50000, capacity: 2, zoneFr: "F", zoneAr: "\u0641", gateFr: "2", gateAr: "2" },
+          ],
+        },
+      },
+      include: { tiers: true },
+    });
+    created.events.push(upEvent.id);
+    const gradin = upEvent.tiers.find((t) => t.nameFr === "Gradin");
+    const fosse = upEvent.tiers.find((t) => t.nameFr === "Fosse");
+
+    // Upgrading needs a real session, unlike the resale buy above.
+    const auth = await fetch(`${API}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "client@eventick.ma", password: "eventick-client-2026" }),
+    });
+    const token = (await auth.json()).token;
+
+    /** A paid Gradin ticket owned by that account. */
+    async function seatFor(label) {
+      const me = await prisma.user.findUniqueOrThrow({
+        where: { email: "client@eventick.ma" },
+        select: { id: true },
+      });
+      const order = await prisma.order.create({
+        data: {
+          eventId: upEvent.id, customerId: me.id, status: "PAID",
+          holderName: "Upgrader", email: "client@eventick.ma", phone: "0612345678",
+          subtotalCents: gradin.priceCents, totalCents: gradin.priceCents, paymentRef: `SEED-${label}`,
+          lines: { create: [{ tierId: gradin.id, qty: 1 }] },
+          tickets: { create: { ref: `LU-${SUFFIX}-${label}`, tierId: gradin.id, holderName: "Upgrader" } },
+        },
+        include: { tickets: true },
+      });
+      return { order, ticket: order.tickets[0] };
+    }
+
+    const beginUpgrade = async (ticketId) => {
+      const res = await fetch(`${API}/api/tickets/${ticketId}/upgrade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          tierId: fosse.id,
+          holderName: "Upgrader", email: "client@eventick.ma", phone: "0612345678",
+        }),
+      });
+      return res.json();
+    };
+
+    // -- It works, end to end, through the gateway -----------------------
+    const a = await seatFor("ok");
+    const upA = await beginUpgrade(a.ticket.id);
+    check("the upgrade sends the buyer to CMI", upA.mode === "cmi", upA.mode ?? upA.error);
+    check("and asks only for the difference", upA.dueCents === 30000, `${upA.dueCents}`);
+
+    // While they are away the seat must be held -- that is the whole reason
+    // the order carries a line on the target tier.
+    const availDuring = await fetch(`${API}/api/orders/availability/${upEvent.slug}`).then((r) => r.json());
+    check(
+      "the target seat is RESERVED while they pay",
+      availDuring.remaining?.[fosse.id] === 1,
+      `Fosse ${availDuring.remaining?.[fosse.id]}/2 left`,
+    );
+
+    const replyA = await callback(upA.orderId, "300.00");
+    check("the money is taken", replyA === "ACTION=POSTAUTH", replyA);
+    const movedA = await prisma.ticket.findUnique({ where: { id: a.ticket.id }, select: { tierId: true } });
+    check("the ticket moved to the dearer zone", movedA.tierId === fosse.id, movedA.tierId === gradin.id ? "still Gradin" : "moved");
+    check("and NO second ticket was minted", (await ticketsFor(upA.orderId)) === 0, `${await ticketsFor(upA.orderId)} on the upgrade order`);
+    check("the upgrade order is PAID", (await statusOf(upA.orderId)) === "PAID");
+
+    // CMI retries anything it thinks went unanswered. The money is genuinely
+    // owed, so it must still be taken -- without moving the seat twice.
+    const replayA = await callback(upA.orderId, "300.00");
+    check("a replay still takes the money", replayA === "ACTION=POSTAUTH", replayA);
+    check("and mints nothing on the replay", (await ticketsFor(upA.orderId)) === 0);
+
+    // -- The zone fills while the buyer is on CMI's page -----------------
+    /*
+     * The failure branch, which mock mode can never reach. Fosse has 2 seats
+     * and one is now taken by the upgrade above. This buyer starts an upgrade
+     * for the last one, and then it is sold from under them.
+     *
+     * The rule: refuse the money. Keeping it would mean a buyer charged for a
+     * seat they never got, and CMI has no refund API to put that right.
+     */
+    const b = await seatFor("full");
+    const upB = await beginUpgrade(b.ticket.id);
+    check("a second upgrade starts on the last seat", upB.mode === "cmi", upB.mode ?? upB.error);
+
+    await prisma.order.create({
+      data: {
+        eventId: upEvent.id, status: "PAID",
+        holderName: "Rival", email: "rival@eventick.ma", phone: "0612345680",
+        subtotalCents: fosse.priceCents, totalCents: fosse.priceCents, paymentRef: "SEED-RIVAL",
+        tickets: { create: { ref: `LR-${SUFFIX}`, tierId: fosse.id, holderName: "Rival" } },
+      },
+    });
+
+    const replyB = await callback(upB.orderId, "300.00");
+    check("the money is REFUSED when the zone filled", replyB === "FAILURE", replyB);
+    const stuckB = await prisma.ticket.findUnique({
+      where: { id: b.ticket.id },
+      select: { tierId: true, status: true },
+    });
+    check(
+      "the buyer keeps their original seat",
+      stuckB.tierId === gradin.id && stuckB.status === "VALID",
+      `${stuckB.status} ${stuckB.tierId === gradin.id ? "Gradin" : "moved!"}`,
+    );
+    /*
+     * CANCELLED, not PENDING.
+     *
+     * The callback reverts the PAID flip to PENDING and then cancels the
+     * upgrade, which closes the order to release its hold. Ending at
+     * CANCELLED is the right resting place: this upgrade can never succeed
+     * now that the zone is full, so leaving it payable would invite a retry
+     * that has to fail. What matters is only that it is not PAID.
+     */
+    const statusB = await statusOf(upB.orderId);
+    check("their order is not left looking PAID", statusB === "CANCELLED", statusB);
+    const feeB = await prisma.order.findUnique({ where: { id: upB.orderId }, select: { feeCents: true } });
+    check("and the organiser is not billed commission for it", feeB.feeCents === null, `feeCents=${feeB.feeCents}`);
+    const upRowB = await prisma.ticketUpgrade.findUnique({
+      where: { orderId: upB.orderId },
+      select: { status: true },
+    });
+    check("the upgrade is closed, releasing its hold", upRowB.status === "CANCELLED", upRowB.status);
+  }
+
   // ── Cleanup ─────────────────────────────────────────────────────────────
   console.log("\n\x1b[1mCleanup\x1b[0m");
   for (const eventId of created.events) {
     const tiers = await prisma.ticketTier.findMany({ where: { eventId }, select: { id: true } });
     const tierIds = tiers.map((t) => t.id);
+    await prisma.ticketUpgrade.deleteMany({ where: { ticket: { tierId: { in: tierIds } } } });
     await prisma.resaleListing.deleteMany({ where: { ticket: { tierId: { in: tierIds } } } });
     await prisma.ticket.deleteMany({ where: { tierId: { in: tierIds } } });
     await prisma.orderLine.deleteMany({ where: { tierId: { in: tierIds } } });
