@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Tag } from "lucide-react";
 import { api, money } from "../../api";
 import { useI18n } from "../../i18n";
-import { Badge, DataTable, EmptyState, PageHead, StatCard, Td, Th } from "./ui";
+import { Badge, DataTable, EmptyState, PageHead, PersonCell, StatCard, Td, Th } from "./ui";
 import { text } from "./copy";
+import { useOrganisers } from "./useOrganisers";
 import { Dropdown } from "../../ui";
 import { eventText, intlLocaleTag } from "../../utils";
 
@@ -28,6 +29,14 @@ const TONE = { LISTED: "warn", SOLD: "success", CANCELLED: "neutral" };
 export default function Resales() {
   const { locale } = useI18n();
   const t = text[locale];
+  /*
+   * Whose event each listing belongs to, shown to a caller whose list can
+   * span more than one organiser. Keyed off the `scope.any` PERMISSION
+   * rather than the ADMIN role, matching useOrganisers: a column gated on
+   * the role would keep rendering for an admin whose scope.any was revoked,
+   * and would hide from a non-admin who holds it.
+   */
+  const { maySeeAllOrganisers } = useOrganisers();
   const [rows, setRows] = useState(null);
   const [slug, setSlug] = useState("");
   const [events, setEvents] = useState([]);
@@ -102,6 +111,7 @@ export default function Resales() {
               <thead>
                 <tr>
                   <Th>{t.eventCol}</Th>
+                  {maySeeAllOrganisers ? <Th>{t.organiserCol}</Th> : null}
                   <Th>{t.compZone}</Th>
                   <Th>{t.ticketColumn}</Th>
                   <Th>{t.resalesPrice}</Th>
@@ -113,6 +123,18 @@ export default function Resales() {
                 {shown.map((r) => (
                   <tr key={r.id} className={r.status === "CANCELLED" ? "opacity-55" : undefined}>
                     <Td>{eventText({ titleFr: r.eventTitleFr, titleAr: r.eventTitleAr }, "title", locale)}</Td>
+                    {maySeeAllOrganisers ? (
+                      <Td>
+                        {/* Null when the owner's account was deleted: said
+                            out loud, because a blank cell here reads as a
+                            loading bug rather than a fact. */}
+                        {r.organiser ? (
+                          <PersonCell name={r.organiser.name} sub={r.organiser.email} />
+                        ) : (
+                          <span className="text-xs text-muted">{t.ownerGone}</span>
+                        )}
+                      </Td>
+                    ) : null}
                     <Td>
                       {eventText({ nameFr: r.tierNameFr, nameAr: r.tierNameAr }, "name", locale)}
                       {r.seatRow ? ` · ${r.seatRow}${r.seatNumber ?? ""}` : ""}

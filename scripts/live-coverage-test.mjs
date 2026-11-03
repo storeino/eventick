@@ -566,6 +566,28 @@ async function main() {
       `${adminSlugs.has(slug)} + ${adminSlugs.has(otherSlug)}`,
     );
 
+    /*
+     * Whose event it is, for the admin only.
+     *
+     * A list spanning several organisers is unreadable without the owner's
+     * name; an organiser's own list would carry their own name on every row,
+     * which is noise. So the field is present for one and absent for the
+     * other, and both halves are asserted — a column that leaked to every
+     * caller would still pass a test that only checked the admin.
+     */
+    const adminRow = (asAdmin.data?.resales ?? []).find((r) => r.eventSlug === otherSlug);
+    record(
+      "the admin is told whose event it is",
+      typeof adminRow?.organiser?.name === "string" && typeof adminRow?.organiser?.email === "string",
+      `${adminRow?.organiser?.name ?? "absent"}`,
+    );
+    const ownRow = (asOwner.data?.resales ?? []).find((r) => r.eventSlug === slug);
+    record(
+      "an organiser is not — every row would be their own name",
+      ownRow !== undefined && ownRow.organiser === undefined,
+      ownRow?.organiser === undefined ? "absent" : JSON.stringify(ownRow.organiser),
+    );
+
     await expectStatus("GET /organiser/resales as a CUSTOMER → 403", "GET", "/api/organiser/resales", 403, {
       token: tokens.customer,
     });

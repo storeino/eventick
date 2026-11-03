@@ -491,7 +491,21 @@ organiserRouter.get(
           },
         },
       },
-      include: { ticket: { include: { tier: { include: { event: true } } } } },
+      include: {
+        ticket: {
+          include: {
+            tier: {
+              include: {
+                // The owner, for the admin-only column below. Selected
+                // rather than included whole: this is a staff list, but an
+                // organiser's password hash has no business leaving the
+                // database to render a name.
+                event: { include: { organiser: { select: { id: true, name: true, email: true } } } },
+              },
+            },
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
       // Capped: this grows with every listing ever made, and a dashboard
       // that fetches all of it gets slower every week.
@@ -514,6 +528,27 @@ organiserRouter.get(
         eventSlug: l.ticket.tier.event.slug,
         eventTitleFr: l.ticket.tier.event.titleFr,
         eventTitleAr: l.ticket.tier.event.titleAr,
+        /*
+         * Who owns the event, for `scope.any` only — the same rule and the
+         * same reason as GET /events above: an admin's list spans several
+         * organisers and is unreadable without it, while an organiser's own
+         * list is all theirs, so the column would be their own name on every
+         * row.
+         */
+        ...(mayActAnywhere
+          ? {
+              organiser: l.ticket.tier.event.organiser
+                ? {
+                    id: l.ticket.tier.event.organiser.id,
+                    name: l.ticket.tier.event.organiser.name,
+                    email: l.ticket.tier.event.organiser.email,
+                  }
+                : // organiserId is nullable: the owner's account was deleted.
+                  // Null rather than omitted, so the table can say so instead
+                  // of rendering a blank cell that reads as a loading bug.
+                  null,
+            }
+          : {}),
       })),
     });
   }),
