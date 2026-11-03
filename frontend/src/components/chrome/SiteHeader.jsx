@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Check, ChevronDown, LayoutDashboard, LogOut, MapPin, Menu, Moon, Search, Sun, Ticket, User, X } from "lucide-react";
+import { Check, ChevronDown, LayoutDashboard, LogOut, MapPin, Menu, Moon, Plus, Search, Sun, Tag, Ticket, User, X } from "lucide-react";
 import { useAuth } from "../../AuthContext";
 import { useCart } from "../../CartContext";
 import { useCatalog } from "../../useCatalog";
@@ -414,6 +414,27 @@ export function SiteHeader({ overlay = false }) {
                       <Ticket className="size-4 shrink-0 text-muted" aria-hidden />
                       {t("account")}
                     </PopoverItem>
+                    {/* Resale and Create, the two things a signed-in person
+                        comes back for.
+
+                        Resale is also in the top nav, but the nav is lg-only
+                        -- on a tablet this popover is the only way in. Create
+                        is the pink button two inches to the left, repeated
+                        here on purpose: that button is hidden below sm, and
+                        someone looking for "the thing I do with my account"
+                        opens this menu rather than scanning the bar. */}
+                    <PopoverItem as={Link} to="/reventes" onClick={close}>
+                      <Tag className="size-4 shrink-0 text-muted" aria-hidden />
+                      {t("navResales")}
+                    </PopoverItem>
+                    <PopoverItem
+                      as={Link}
+                      to={canUsePro ? "/organiser" : "/devenir-organisateur"}
+                      onClick={close}
+                    >
+                      <Plus className="size-4 shrink-0 text-muted" aria-hidden />
+                      {t("create")}
+                    </PopoverItem>
                     {/* Pro moved here from the top nav, which had no room
                         left for it once the header got trimmed to 3 items
                         to stop "Culture & Théâtre" / "Espace Pro" wrapping
@@ -550,6 +571,19 @@ export function SiteHeader({ overlay = false }) {
                     </Link>
                   </li>
                 ) : null}
+                {/* "Create an event" lives in the top bar as a pink button,
+                    but that button is `hidden sm:inline-flex` -- so below
+                    640px it vanished and was in no menu either. On a phone
+                    the one action the header exists to push was unreachable. */}
+                <li>
+                  <Link
+                    to={canUsePro ? "/organiser" : "/devenir-organisateur"}
+                    onClick={() => setMenuOpen(false)}
+                    className="block rounded-control px-3 py-3 text-[15px] font-semibold text-primary transition hover:bg-paper"
+                  >
+                    {t("create")}
+                  </Link>
+                </li>
               </ul>
 
               <p className="mt-5 px-3 pb-2 text-[11px] font-extrabold uppercase tracking-wide text-muted">{t("allMorocco")}</p>
