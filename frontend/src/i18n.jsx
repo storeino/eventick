@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 const fr = {
   explore: "Explorer",
+  navResales: "Revente",
   festivals: "Festivals",
   concerts: "Concerts",
   culture: "Culture & Théâtre",
@@ -610,6 +611,7 @@ const fr = {
 
 const en = {
   explore: "Explore",
+  navResales: "Resale",
   festivals: "Festivals",
   concerts: "Concerts",
   culture: "Culture & Theatre",
@@ -1209,6 +1211,7 @@ const en = {
 
 const ar = {
   explore: "استكشف",
+  navResales: "إعادة بيع",
   festivals: "مهرجانات",
   concerts: "حفلات",
   culture: "ثقافة ومسرح",

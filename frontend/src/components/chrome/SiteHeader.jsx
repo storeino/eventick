@@ -56,10 +56,17 @@ import { EventTicker } from "./EventTicker";
 // festivals, humour, sport, nightlife, culture, salons; see utils.js).
 // Labels come from categoryLabel() for exactly that reason: it is keyed off
 // the category id, so a link and its text cannot drift apart again.
+//
+// Back to 4 with "Revente". It is deliberately the SHORTEST label in the bar
+// (one word in all three languages) because the trim to 3 was about width,
+// not count -- "Culture & Theatre" and "Espace Pro" were what wrapped. It
+// earns the room: a resale is otherwise reachable only by its own link, so
+// without a way in, a seat somebody is selling is a seat nobody can find.
 const NAV = [
   { to: "/explorer", key: "explore" },
   { to: "/explorer?cat=festivals", cat: "festivals" },
   { to: "/explorer?cat=nightlife", cat: "nightlife" },
+  { to: "/reventes", key: "navResales" },
 ];
 
 /** A nav item's visible text: the category's own label, or a plain copy key. */
