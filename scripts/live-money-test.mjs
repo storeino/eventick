@@ -417,25 +417,39 @@ async function main() {
     const before = await call("GET", "/api/organiser/finance", { token: orga });
     const b = before.data.lifetime;
 
-    const refund = await call("POST", `/api/organiser/orders/${orderId}/refund`, {
-      token: orga,
-      body: { amountCents: 50000 },
+    /*
+     * Through a CANCELLED EVENT, which is the only way money goes back now.
+     *
+     * This used to call /organiser/orders/:id/refund for a partial 500.00,
+     * and that route is gone -- tickets are final sale. The property it was
+     * really testing is unchanged and still worth pinning: refunded money
+     * must stop earning commission, because the old screen kept charging the
+     * full fee on money the organiser had given back.
+     *
+     * Cancelling refunds the order in FULL, so both figures drop by the
+     * whole order rather than half of it.
+     */
+    const refunding = await prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      select: { totalCents: true, feeCents: true, event: { select: { slug: true } } },
     });
-    check("a partial refund is accepted", refund.status === 200, `${refund.status}`);
+    const cancelled = await call("POST", `/api/organiser/events/${refunding.event.slug}/cancel`, {
+      token: orga,
+      body: { reason: "Test de remboursement" },
+    });
+    check("cancelling the event refunds its orders", cancelled.status === 200, `${cancelled.status}`);
 
     const after = await call("GET", "/api/organiser/finance", { token: orga });
     const a = after.data.lifetime;
     check(
       "net revenue drops by the refund",
-      a.netRevenueCents === b.netRevenueCents - 50000,
-      `${mad(b.netRevenueCents)} -> ${mad(a.netRevenueCents)}`,
+      a.netRevenueCents === b.netRevenueCents - refunding.totalCents,
+      `${mad(b.netRevenueCents)} -> ${mad(a.netRevenueCents)} (less ${mad(refunding.totalCents)})`,
     );
-    // Half the order was refunded, so half its 3000 fee goes with it. The old
-    // screen kept charging the full fee on refunded money.
     check(
-      "commission drops in proportion",
-      a.feeCents === b.feeCents - 1500,
-      `${mad(b.feeCents)} -> ${mad(a.feeCents)}`,
+      "commission goes with it, not charged on money given back",
+      a.feeCents === b.feeCents - refunding.feeCents,
+      `${mad(b.feeCents)} -> ${mad(a.feeCents)} (less ${mad(refunding.feeCents)})`,
     );
   }
 

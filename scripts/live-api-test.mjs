@@ -501,20 +501,25 @@ await expectStatus("PATCH ticket status (undo admit)", "PATCH", `/api/organiser/
   token: tokens.admin,
   body: { status: "VALID" },
 });
-const refund = await call("POST", `/api/organiser/orders/${orderId}/refund`, {
+/*
+ * Tickets are final sale. There is no discretionary refund: money goes back
+ * only when the EVENT is cancelled, which live-ticketing-test and
+ * live-refund-policy-test cover. These five checks used to exercise partial
+ * refunds, over-refunds and double-refunds on this route.
+ */
+await expectStatus("there is no discretionary refund route", "POST", `/api/organiser/orders/${orderId}/refund`, 404, {
   token: tokens.admin,
   body: { amountCents: 10000 },
 });
-record("partial refund recorded", refund.status === 200 && refund.data?.refundedCents === 10000 && refund.data?.full === false, `${refund.status} refunded=${refund.data?.refundedCents}`);
-await expectStatus("over-refund → 400", "POST", `/api/organiser/orders/${orderId}/refund`, 400, {
-  token: tokens.admin,
-  body: { amountCents: 9_000_000 },
-});
-const full = await call("POST", `/api/organiser/orders/${orderId}/refund`, { token: tokens.admin, body: {} });
-record("full refund voids tickets", full.status === 200 && full.data?.full === true, `${full.status} full=${full.data?.full}`);
-const afterRefund = await call("GET", `/api/orders/${orderId}${k(orderKey)}`);
-record("order is REFUNDED, tickets CANCELLED", afterRefund.data?.order?.status === "REFUNDED" && afterRefund.data.order.tickets.every((t) => t.status === "CANCELLED"), `status=${afterRefund.data?.order?.status}`);
-await expectStatus("refunding again → 409", "POST", `/api/organiser/orders/${orderId}/refund`, 409, { token: tokens.admin, body: {} });
+// Voiding a seat without paying for it is the remaining organiser action.
+const voided = await call("POST", `/api/organiser/orders/${orderId}/cancel`, { token: tokens.admin, body: {} });
+record("an order can be voided without a refund", voided.status === 200, `${voided.status}`);
+const afterVoid = await call("GET", `/api/orders/${orderId}${k(orderKey)}`);
+record(
+  "its tickets are CANCELLED and no money moved",
+  afterVoid.data?.order?.tickets?.every((t) => t.status === "CANCELLED") && (afterVoid.data?.order?.refundedCents ?? 0) === 0,
+  `status=${afterVoid.data?.order?.status} refunded=${(afterVoid.data?.order?.refundedCents ?? 0) / 100}`,
+);
 
 // ──────────────────────────────────────────────────────────────── promo ──
 setGroup("PROMO  /api/promo");

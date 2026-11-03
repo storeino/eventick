@@ -1202,29 +1202,16 @@ async function main() {
       body: { status: "VALID" },
     });
 
+    /*
+     * Orders.jsx no longer has a refund button, and the route behind it is
+     * gone: tickets are final sale, and money goes back only when the EVENT
+     * is cancelled. These four checks used to drive a full refund, a repeat,
+     * a partial and a negative amount from the desk.
+     */
     const toRefund = await mk("A Rembourser");
-    // Orders.jsx sends an empty body, meaning "refund whatever is still
-    // outstanding". amountCents is optional and must be positive when given.
-    await check("POST /organiser/orders/:id/refund refunds in full from the desk", "POST", `/organiser/orders/${toRefund.id}/refund`, 200, {
+    await check("the desk has no refund route left", "POST", `/organiser/orders/${toRefund.id}/refund`, 404, {
       token: tokens.organiser,
       body: {},
-      shape: (d) => typeof d?.refundedCents === "number" && d?.full === true,
-    });
-    await check("refunding it again → 409", "POST", `/organiser/orders/${toRefund.id}/refund`, 409, {
-      token: tokens.organiser,
-      body: {},
-    });
-
-    // A partial refund, as the desk can also issue.
-    const partial = await mk("Partiel");
-    await check("POST refund with an amount refunds part of it", "POST", `/organiser/orders/${partial.id}/refund`, 200, {
-      token: tokens.organiser,
-      body: { amountCents: 5000 },
-      shape: (d) => d?.refundedCents === 5000 && d?.full === false,
-    });
-    await check("a negative amount is refused", "POST", `/organiser/orders/${partial.id}/refund`, 400, {
-      token: tokens.organiser,
-      body: { amountCents: -100 },
     });
 
     const toCancel = await mk("A Annuler");

@@ -166,9 +166,17 @@ await assertGatedOn(
   [["listing events", "GET", "/api/organiser/events"]],
 );
 
+/*
+ * finance.refund now guards reconcile-refund, not a discretionary refund:
+ * tickets are final sale, and /organiser/orders/:id/refund is gone. The
+ * permission still has to gate something, and this is what it gates. The
+ * route answers 409 on a mock order (no gateway reference to reconcile) when
+ * the permission IS held, which is < 400's inverse but still proves the gate
+ * — assertGatedOn only requires 403 while it is revoked.
+ */
 await assertGatedOn(
   "finance.refund",
-  [["refunding an order", "POST", `/api/organiser/orders/${orderId}/refund`, {}]],
+  [["reconciling a refund", "POST", `/api/organiser/orders/${orderId}/reconcile-refund`, { amountRefundedCents: 100 }]],
   [
     ["listing events", "GET", "/api/organiser/events"],
     ["reading revenue stats", "GET", "/api/organiser/stats"],

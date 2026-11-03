@@ -362,46 +362,60 @@ async function main() {
   }
 
   // ═══ 5. Refunds ═══════════════════════════════════════════════════════
-  section("5. Refunds move revenue and commission together");
+  section("5. Refunds happen only when an event is cancelled");
   {
     const { event, tier } = await makeEvent("refund", { organiserId: orgaId });
     const order = await buyAndSettle(event, tier, 2);
 
     const before = await call("GET", `/api/organiser/stats?organiserId=${orgaId}`, { token: admin });
 
-    const half = await call("POST", `/api/organiser/orders/${order.id}/refund`, {
+    /*
+     * Tickets are final sale. This section used to exercise partial refunds,
+     * over-refunds and a customer being refused one, all through
+     * /organiser/orders/:id/refund — a route that no longer exists.
+     *
+     * What survives from it is the property that actually matters: refunded
+     * money must take its commission with it, because the Finance screen once
+     * kept charging the full fee on money the organiser had handed back. That
+     * is now checked through the only path that returns money.
+     */
+    const gone = await call("POST", `/api/organiser/orders/${order.id}/refund`, {
       token: orga,
       body: { amountCents: 100000 },
     });
-    check("a partial refund is accepted", half.status === 200, `${half.status}`);
+    check("there is no discretionary refund route", gone.status === 404, `${gone.status}`);
 
-    const mid = await call("GET", `/api/organiser/stats?organiserId=${orgaId}`, { token: admin });
+    const stillValid = await prisma.ticket.count({ where: { orderId: order.id, status: "VALID" } });
+    check("the buyer keeps their tickets", stillValid === 2, `${stillValid} valid`);
+
+    const row = await prisma.order.findUniqueOrThrow({
+      where: { id: order.id },
+      select: { totalCents: true, feeCents: true, refundedCents: true },
+    });
+    check("and nothing was returned", row.refundedCents === 0, `${mad(row.refundedCents)} MAD`);
+
+    // Calling the event off is what refunds, and it refunds in full.
+    const cancelled = await call("POST", `/api/organiser/events/${event.slug}/cancel`, {
+      token: orga,
+      body: { reason: "Salle indisponible" },
+    });
+    check("cancelling the event refunds its buyers", cancelled.status === 200, `${cancelled.status}`);
+
+    const after = await call("GET", `/api/organiser/stats?organiserId=${orgaId}`, { token: admin });
     check(
-      "net revenue falls by the refund",
-      mid.data.gmvCents === before.data.gmvCents - 100000,
-      `${mad(before.data.gmvCents)} -> ${mad(mid.data.gmvCents)}`,
+      "net revenue falls by the whole order",
+      after.data.gmvCents === before.data.gmvCents - row.totalCents,
+      `${mad(before.data.gmvCents)} -> ${mad(after.data.gmvCents)} (less ${mad(row.totalCents)})`,
     );
-    // 2000.00 at 3% is 60.00; half refunded leaves 30.00.
     check(
-      "commission falls in proportion",
-      mid.data.feeCents === before.data.feeCents - 3000,
-      `${mad(before.data.feeCents)} -> ${mad(mid.data.feeCents)}`,
+      "commission goes with it, not charged on money given back",
+      after.data.feeCents === before.data.feeCents - row.feeCents,
+      `${mad(before.data.feeCents)} -> ${mad(after.data.feeCents)} (less ${mad(row.feeCents)})`,
     );
 
-    const ticketsStillValid = await prisma.ticket.count({ where: { orderId: order.id, status: "VALID" } });
-    check("a partial refund leaves the tickets usable", ticketsStillValid === 2, `${ticketsStillValid} valid`);
-
-    const rest = await call("POST", `/api/organiser/orders/${order.id}/refund`, { token: orga, body: {} });
-    check("the remainder can be refunded", rest.status === 200, `${rest.status}`);
     const voided = await prisma.ticket.count({ where: { orderId: order.id, status: "CANCELLED" } });
     // The point: someone refunded in full must not still get through the gate.
-    check("a full refund voids every ticket", voided === 2, `${voided} cancelled`);
-
-    const over = await call("POST", `/api/organiser/orders/${order.id}/refund`, { token: orga, body: { amountCents: 100 } });
-    check("an over-refund is refused", over.status === 409, `${over.status}`);
-
-    const asCustomer = await call("POST", `/api/organiser/orders/${order.id}/refund`, { token: customer, body: {} });
-    check("a customer cannot refund an order", asCustomer.status === 403, `${asCustomer.status}`);
+    check("every ticket is voided", voided === 2, `${voided} cancelled`);
   }
 
   // ═══ 6. Resale ════════════════════════════════════════════════════════

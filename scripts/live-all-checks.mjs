@@ -375,20 +375,29 @@ const c7 = await makeEvent(org, c7Slug);
 const c7Tier = c7.data?.event?.tiers?.[0]?.id;
 const c7Sale = await buyAs(customer, c7Slug, c7Tier, `c7-${stamp}@example.test`);
 
-const c7First = await call("POST", `/organiser/orders/${c7Sale.order.id}/refund`, {}, org);
-ok("an organiser with finance.refund can refund", c7First.status === 200, `HTTP ${c7First.status}`);
+/*
+ * Tickets are final sale. This check used to prove an organiser could refund
+ * any order on request; that route is gone, and a refund now happens for one
+ * reason only — the event was called off, which CHECK 17 covers.
+ */
+const c7Gone = await call("POST", `/organiser/orders/${c7Sale.order.id}/refund`, {}, org);
+ok("there is no discretionary refund route", c7Gone.status === 404, `HTTP ${c7Gone.status}`);
 
 const c7Order = await call("GET", "/organiser/orders/detailed", undefined, org);
 const c7Row = (c7Order.data?.orders ?? []).find((o) => o.id === c7Sale.order.id);
-ok("the order reads REFUNDED", c7Row?.status === "REFUNDED", c7Row?.status);
-ok("its tickets are voided", (c7Row?.tickets ?? []).every((t) => t.status === "CANCELLED"),
-  (c7Row?.tickets ?? []).map((t) => t.status).join(","));
+ok("the order is untouched", c7Row?.status === "PAID", c7Row?.status);
+ok("and nothing was returned", (c7Row?.refundedCents ?? 0) === 0, `${(c7Row?.refundedCents ?? 0) / 100} MAD`);
 
-const c7Twice = await call("POST", `/organiser/orders/${c7Sale.order.id}/refund`, {}, org);
-ok("refunding twice is refused", c7Twice.status >= 400, `HTTP ${c7Twice.status}`);
+// Voiding a seat without paying for it is still available, and is what an
+// organiser does when a buyer must lose the ticket but not the charge.
+const c7Void = await call("POST", `/organiser/orders/${c7Sale.order.id}/cancel`, {}, org);
+ok("an order can still be voided without a refund", c7Void.status === 200, `HTTP ${c7Void.status}`);
 
-const c7Customer = await call("POST", `/organiser/orders/${c7Sale.order.id}/refund`, {}, customer);
-ok("a customer cannot refund anything", c7Customer.status === 403, `HTTP ${c7Customer.status}`);
+const c7After = await call("GET", "/organiser/orders/detailed", undefined, org);
+const c7VoidRow = (c7After.data?.orders ?? []).find((o) => o.id === c7Sale.order.id);
+ok("its tickets are voided", (c7VoidRow?.tickets ?? []).every((t) => t.status === "CANCELLED"),
+  (c7VoidRow?.tickets ?? []).map((t) => t.status).join(","));
+ok("with still no money moved", (c7VoidRow?.refundedCents ?? 0) === 0, `${(c7VoidRow?.refundedCents ?? 0) / 100} MAD`);
 
 // ═══════════════════════════════════════════════════════ CHECK 8
 heading(8, "Becoming an organiser");
@@ -525,11 +534,18 @@ ok("the journal is readable by an admin", c15Before.status === 200, `HTTP ${c15B
 ok("it reports the action vocabulary", (c15Before.data?.actions ?? []).length > 0,
   `${(c15Before.data?.actions ?? []).length} action types`);
 
-// A refund is an audited action; it must leave a row.
+/*
+ * An order cancellation is an audited action; it must leave a row.
+ *
+ * This used to refund the order, which was the audited action until refunds
+ * became cancellation-only. Cancelling an order is the equivalent: it voids
+ * a buyer's tickets, so who did it matters, and it still records through
+ * recordAudit the same way.
+ */
 const c15Slug = `${PREFIX}-c15-${stamp}`;
 const c15 = await makeEvent(org, c15Slug);
 const c15Sale = await buyAs(customer, c15Slug, c15.data?.event?.tiers?.[0]?.id, `c15-${stamp}@example.test`);
-await call("POST", `/organiser/orders/${c15Sale.order.id}/refund`, {}, org);
+await call("POST", `/organiser/orders/${c15Sale.order.id}/cancel`, {}, org);
 // Filtered by action and subject rather than counting rows: the journal is
 // capped at 50 per page, so once it is full a count can never grow.
 //
@@ -539,11 +555,11 @@ await call("POST", `/organiser/orders/${c15Sale.order.id}/refund`, {}, org);
 // this polls briefly rather than racing it.
 let c15Row = null;
 for (let i = 0; i < 20 && !c15Row; i += 1) {
-  const probe = await call("GET", `/platform/audit?action=order.refunded&subjectId=${c15Sale.order.id}`, undefined, admin);
+  const probe = await call("GET", `/platform/audit?action=order.cancelled&subjectId=${c15Sale.order.id}`, undefined, admin);
   c15Row = (probe.data?.events ?? []).find((e) => e.subject?.id === c15Sale.order.id);
   if (!c15Row) await new Promise((r) => setTimeout(r, 150));
 }
-ok("the refund landed in the journal", Boolean(c15Row),
+ok("the cancellation landed in the journal", Boolean(c15Row),
   c15Row ? `by ${c15Row.actor?.email ?? c15Row.actor?.id ?? "?"}` : "no row for this order");
 ok("and records who did it", Boolean(c15Row?.actor?.email || c15Row?.actor?.id));
 
