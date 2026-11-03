@@ -512,6 +512,60 @@ async function main() {
       orgRow !== undefined && !("buyerEmail" in orgRow) && !("buyerName" in orgRow) && !("email" in orgRow),
       Object.keys(orgRow ?? {}).join(","),
     );
+    /*
+     * The check that actually catches a scope regression.
+     *
+     * "The owner sees their own" passes just as well with a broken filter,
+     * because every seeded event belongs to one organiser -- so a list that
+     * returned EVERYTHING would look identical. This builds a SECOND
+     * organiser with their own event and listing, and asserts each side of
+     * the boundary: the admin sees both, neither organiser sees the other.
+     */
+    const otherEmail = `cov-org2-${Date.now()}@example.com`;
+    const reg = await call("POST", "/api/auth/register", {
+      body: { name: "Organiser Two", email: otherEmail, password: "cov-org2-2026" },
+    });
+    const otherToken = reg.data?.token;
+    await call("PATCH", `/api/auth/users/${reg.data?.user?.id}/role`, {
+      token: tokens.admin,
+      body: { role: "ORGANISER" },
+    });
+
+    const { slug: otherSlug, event: otherEvent } = await makeEvent(otherToken, `org2${Date.now()}`, [
+      tierBody({ capacity: 2 }),
+    ]);
+    slugs.push(otherSlug);
+    const otherBuy = await buy(tokens.customer, otherSlug, otherEvent.tiers[0].id, 1, "Acheteur Deux");
+    const otherListed = await call("POST", "/api/resale/listings", {
+      token: tokens.customer,
+      body: { ticketId: otherBuy.tickets[0].id },
+    });
+    record("(setup) the second organiser has a listing too", otherListed.status === 201, `${otherListed.status}`);
+
+    const asOwner = await call("GET", "/api/organiser/resales", { token: tokens.organiser });
+    const ownerSlugs = new Set((asOwner.data?.resales ?? []).map((r) => r.eventSlug));
+    record(
+      "an organiser does NOT see another organiser's resales",
+      ownerSlugs.has(slug) && !ownerSlugs.has(otherSlug),
+      `own=${ownerSlugs.has(slug)} other=${ownerSlugs.has(otherSlug)}`,
+    );
+
+    const asOther = await call("GET", "/api/organiser/resales", { token: otherToken });
+    const otherSeen = new Set((asOther.data?.resales ?? []).map((r) => r.eventSlug));
+    record(
+      "and the boundary holds from the other side",
+      otherSeen.has(otherSlug) && !otherSeen.has(slug),
+      `own=${otherSeen.has(otherSlug)} other=${otherSeen.has(slug)}`,
+    );
+
+    const asAdmin = await call("GET", "/api/organiser/resales", { token: tokens.admin });
+    const adminSlugs = new Set((asAdmin.data?.resales ?? []).map((r) => r.eventSlug));
+    record(
+      "an ADMIN sees both — scope.any is what lifts the filter",
+      adminSlugs.has(slug) && adminSlugs.has(otherSlug),
+      `${adminSlugs.has(slug)} + ${adminSlugs.has(otherSlug)}`,
+    );
+
     await expectStatus("GET /organiser/resales as a CUSTOMER → 403", "GET", "/api/organiser/resales", 403, {
       token: tokens.customer,
     });
@@ -757,11 +811,15 @@ async function main() {
     // refuses to delete. Loop until a pass removes nothing.
     let orders = 0;
     for (let pass = 0; pass < 3; pass++) {
-      const all = await call("GET", "/api/organiser/orders", { token: tokens.organiser });
+      // As ADMIN: one of these events belongs to the second organiser the
+      // scope test creates, and both the list and the delete are
+      // ownership-scoped -- so sweeping as the first organiser silently
+      // skipped it, and the event then refused to delete with a 409.
+      const all = await call("GET", "/api/organiser/orders", { token: tokens.admin });
       const mine = (all.data?.orders ?? []).filter((order) => slugs.includes(order.eventSlug));
       if (mine.length === 0) break;
       for (const order of mine) {
-        const res = await call("DELETE", `/api/organiser/orders/${order.id}`, { token: tokens.organiser });
+        const res = await call("DELETE", `/api/organiser/orders/${order.id}`, { token: tokens.admin });
         if (res.status === 204) orders++;
       }
     }
@@ -769,7 +827,10 @@ async function main() {
     let events = 0;
     const stuck = [];
     for (const slug of slugs) {
-      const res = await call("DELETE", `/api/organiser/events/${slug}`, { token: tokens.organiser });
+      // As ADMIN, not as the first organiser: the scope test above creates an
+      // event owned by a SECOND organiser, and "Not your event" would leave it
+      // behind in the public catalogue.
+      const res = await call("DELETE", `/api/organiser/events/${slug}`, { token: tokens.admin });
       if (res.status === 204) events++;
       else stuck.push(`${slug}:${res.status} ${JSON.stringify(res.data)}`);
     }
