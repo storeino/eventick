@@ -53,6 +53,8 @@ export function publicEvent(event: EventWithTiers, remainingByTier: Record<strin
       capacity: tier.capacity,
       remaining: remainingByTier[tier.id] ?? 0,
       numbered: tier.numbered,
+      // Whether this tier is a place, and so belongs on the site plan.
+      spatial: tier.spatial,
       recommended: tier.recommended,
       saveCents: tier.saveCents,
       perks: tier.perks,

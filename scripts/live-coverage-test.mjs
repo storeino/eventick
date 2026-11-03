@@ -443,6 +443,32 @@ async function main() {
       token: tokens.organiser,
       body: { venueKind: "CATHEDRAL" },
     });
+
+    /*
+     * A tier that is not a PLACE.
+     *
+     * "Pass 3 jours" and "Pass journée" admit you to the same ground on
+     * different days; drawing them as stacked zones said the three-day pass
+     * stands nearer the stage. The flag is what lets an organiser say so,
+     * and the page reads it to decide between drawing and listing.
+     */
+    const tier = event.tiers[1];
+    record("a tier is a place by default", tier.spatial === true, `${tier.spatial}`);
+
+    const flagged = await expectStatus("PATCH spatial=false", "PATCH", `/api/organiser/tiers/${tier.id}`, 200, {
+      token: tokens.organiser,
+      body: { spatial: false },
+    });
+    record("the flag is stored", flagged.status === 200, `${flagged.status}`);
+
+    const after = await call("GET", `/api/events/${slug}`);
+    const shaped = (after.data?.event?.tiers ?? []).find((x) => x.id === tier.id);
+    record("and the public page can tell the two apart", shaped?.spatial === false, `${shaped?.spatial}`);
+    record(
+      "while the other tier is still a place",
+      (after.data?.event?.tiers ?? []).some((x) => x.id !== tier.id && x.spatial === true),
+      "yes",
+    );
   }
   // ─────────────────────────────────────────────────────────── resale ──
   setGroup("RESALE  /api/resale/*");

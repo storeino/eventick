@@ -318,6 +318,23 @@ model TicketTier {
   gateFr String @map("gate_fr")
   gateAr String @map("gate_ar")
 
+  /// Whether this tier is a PLACE, and so belongs on the site plan.
+  ///
+  /// Not every tier is somewhere to stand. "Pass 3 jours" and "Pass journée"
+  /// admit you to the same ground on different days; "Semi-marathon" and
+  /// "Marathon 42 km" are distances; "Badge visiteur" is a credential. The
+  /// plan drew all of them as stacked zones, which told a buyer the 3-day
+  /// pass stands nearer the stage than the day pass. It does not — that was
+  /// invented geography, and it was wrong on six of sixteen events.
+  ///
+  /// False means the tier still sells exactly as before; it simply is not
+  /// drawn, and is listed under the plan as an admission type instead.
+  ///
+  /// Default true, because the majority of tiers ARE places (a balcony, a
+  /// pit, a stand) and because it keeps every existing tier drawn exactly as
+  /// it was until somebody says otherwise.
+  spatial Boolean @default(true)
+
   /// When this tier may be bought. Both null means "on sale as soon as the
   /// event is published", which is how every tier behaved before these
   /// existed.
