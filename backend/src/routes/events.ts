@@ -66,6 +66,68 @@ eventsRouter.get(
   }),
 );
 
+/**
+ * Seats being resold on this event — but only for tiers that are SOLD OUT.
+ *
+ * The sold-out condition is the whole design, not a detail. A resale sits at
+ * face value, so surfacing one beside a tier still on sale just takes a sale
+ * the organiser would have made anyway: the platform would be competing with
+ * its own inventory. Where there is nothing left to buy it is the opposite —
+ * a sold-out page stops being a dead end, and the waitlist stops being the
+ * only answer to "can I still go".
+ *
+ * Public and unauthenticated, like the catalogue: you have to see that a seat
+ * exists before deciding to sign in and buy it.
+ *
+ * The token IS returned, which deserves saying out loud because elsewhere it
+ * is treated as a secret. It is the address of the listing, not a permission:
+ * /resale/:token/buy still requires a signed-in account, still takes payment,
+ * and still refuses a listing that is sold or withdrawn. A seat whose owner
+ * has deliberately put it up for sale on a sold-out event is not a seat whose
+ * location needs hiding — and without it there is nothing to link to.
+ */
+eventsRouter.get(
+  "/:slug/resales",
+  asyncHandler(async (req, res) => {
+    const slug = param(req, "slug");
+    const event = await prisma.event.findUnique({
+      where: { slug },
+      select: { id: true, status: true, allowResale: true, startAt: true },
+    });
+    if (!event || event.status !== "PUBLISHED") throw new HttpError(404, "Event not found");
+
+    // An organiser who never opted in has no secondary market, and an event
+    // that has started cannot be sold into.
+    if (!event.allowResale || event.startAt.getTime() <= Date.now()) {
+      return res.json({ resales: [] });
+    }
+
+    const remaining = await remainingByTier(event.id);
+    const listings = await prisma.resaleListing.findMany({
+      where: { status: "LISTED", ticket: { tier: { eventId: event.id } } },
+      include: { ticket: { include: { tier: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+
+    res.json({
+      resales: listings
+        // Tier by tier: one zone selling out does not put another zone's
+        // resales in front of seats the organiser can still sell himself.
+        .filter((l) => (remaining[l.ticket.tierId] ?? 0) <= 0)
+        .map((l) => ({
+          id: l.id,
+          token: l.token,
+          priceCents: l.priceCents,
+          tierId: l.ticket.tierId,
+          tierNameFr: l.ticket.tier.nameFr,
+          tierNameAr: l.ticket.tier.nameAr,
+          seatRow: l.ticket.seatRow,
+          seatNumber: l.ticket.seatNumber,
+        })),
+    });
+  }),
+);
+
 const waitlistSchema = z.object({ email: z.string().email() });
 
 eventsRouter.post(

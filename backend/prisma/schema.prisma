@@ -370,6 +370,23 @@ model Order {
   refundedAt    DateTime? @map("refunded_at")
   refundRef     String?   @map("refund_ref")
 
+  /// When the money actually reached the buyer, as opposed to when the refund
+  /// was decided.
+  ///
+  /// These are different events and the gap between them is the whole point.
+  /// CMI has no refund API, so `refundedAt` records a decision and somebody
+  /// still has to reverse the transaction in the CMI back office by hand.
+  /// Without this column there was nothing anywhere to say whether that had
+  /// been done: an organiser cancelled an event, every order read REFUNDED,
+  /// and no screen could tell a buyer who had their money back from one still
+  /// waiting for it.
+  ///
+  /// Null while a refund is outstanding. Set when an admin marks it sent,
+  /// alongside the bank or CMI reference they actioned it with.
+  refundPaidAt DateTime? @map("refund_paid_at")
+  /// The CMI/bank reference for the reversal, typed in by whoever made it.
+  refundPaidRef String?  @map("refund_paid_ref")
+
   createdAt DateTime @default(now()) @map("created_at")
 
   customer    User?        @relation(fields: [customerId], references: [id], onDelete: SetNull)

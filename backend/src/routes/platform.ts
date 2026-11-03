@@ -651,3 +651,106 @@ platformRouter.get(
     });
   }),
 );
+
+/*
+ * Refunds that have been decided but not yet sent.
+ *
+ * CMI has no refund API, so refundOrder records the decision, voids the
+ * tickets and emails the buyer — and someone still has to reverse the
+ * transaction in the CMI back office by hand. Nothing surfaced that anywhere,
+ * so a cancelled event left every order reading REFUNDED with no way to tell
+ * a buyer who had their money back from one still waiting.
+ *
+ * It matters most for a resale: the seller's money is held by the platform
+ * and the organiser's payout has already been reduced by it, so the seller is
+ * owed and nobody was being told.
+ */
+platformRouter.get(
+  "/refunds/pending",
+  requirePermission("finance.refund"),
+  asyncHandler(async (_req, res) => {
+    const orders = await prisma.order.findMany({
+      where: { refundedCents: { gt: 0 }, refundPaidAt: null },
+      select: {
+        id: true,
+        refundedCents: true,
+        refundedAt: true,
+        refundRef: true,
+        gatewayRef: true,
+        holderName: true,
+        email: true,
+        event: { select: { slug: true, titleFr: true, titleAr: true } },
+      },
+      orderBy: { refundedAt: "asc" },
+    });
+
+    res.json({
+      refunds: orders.map((o) => ({
+        orderId: o.id,
+        amountCents: o.refundedCents,
+        refundedAt: o.refundedAt?.toISOString() ?? null,
+        refundRef: o.refundRef,
+        /** The CMI transaction to reverse. Null on a mock-settled order. */
+        gatewayRef: o.gatewayRef,
+        buyerName: o.holderName,
+        buyerEmail: o.email,
+        eventSlug: o.event.slug,
+        eventTitleFr: o.event.titleFr,
+        eventTitleAr: o.event.titleAr,
+      })),
+      totalCents: orders.reduce((sum, o) => sum + o.refundedCents, 0),
+    });
+  }),
+);
+
+const markRefundPaidSchema = z.object({
+  /** The CMI or bank reference for the reversal, so the books can be checked. */
+  reference: z.string().trim().min(3).max(120),
+});
+
+/**
+ * Record that a refund has actually been sent.
+ *
+ * Does not move money either — nothing here can. It closes the loop on a
+ * reversal made by hand elsewhere, which is the only way the platform can
+ * know the buyer has been paid.
+ *
+ * A reference is required rather than optional: "marked as paid" with nothing
+ * to check it against is indistinguishable from a mistake, and this is the
+ * row someone will be reading months later when a buyer says the money never
+ * arrived.
+ */
+platformRouter.post(
+  "/refunds/:id/paid",
+  requirePermission("finance.refund"),
+  asyncHandler(async (req, res) => {
+    const id = param(req, "id");
+    const body = markRefundPaidSchema.parse(req.body ?? {});
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      select: { id: true, refundedCents: true, refundPaidAt: true },
+    });
+    if (!order) throw new HttpError(404, "Order not found");
+    if (order.refundedCents <= 0) throw new HttpError(409, "This order has no refund to pay");
+    // Guarded rather than overwritten: marking it twice would hide whichever
+    // reference was recorded first, and that is the one someone reconciled.
+    if (order.refundPaidAt) throw new HttpError(409, "This refund is already marked as sent");
+
+    const updated = await prisma.order.update({
+      where: { id },
+      data: { refundPaidAt: new Date(), refundPaidRef: body.reference },
+      select: { refundPaidAt: true, refundedCents: true },
+    });
+
+    recordAudit(req, {
+      action: AUDIT_ACTIONS.ORDER_REFUND_PAID,
+      subjectType: "order",
+      subjectId: id,
+      subjectLabel: `${(updated.refundedCents / 100).toFixed(2)} MAD`,
+      details: { amountCents: updated.refundedCents, reference: body.reference },
+    });
+
+    res.json({ paid: true, paidAt: updated.refundPaidAt?.toISOString() ?? null });
+  }),
+);

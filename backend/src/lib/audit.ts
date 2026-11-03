@@ -35,6 +35,8 @@ export const AUDIT_ACTIONS = {
   ORGANISER_PLAN_ASSIGNED: "organiser.plan.assigned",
   ORDER_REFUNDED: "order.refunded",
   ORDER_REFUND_RECONCILED: "order.refund.reconciled",
+  /** Money actually sent back to a buyer, which CMI cannot do for us. */
+  ORDER_REFUND_PAID: "order.refund.paid",
   ORDER_CANCELLED: "order.cancelled",
   PAYOUT_CREATED: "payout.created",
   PAYOUT_PAID: "payout.paid",
