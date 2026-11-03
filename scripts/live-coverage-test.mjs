@@ -410,6 +410,40 @@ async function main() {
 
   }
 
+  setGroup("VENUE PLAN  the site plan is the event's own");
+  {
+    /*
+     * The plan used to be three hardcoded shapes on every event. It is now
+     * drawn from venueKind plus the event's real tiers, so the two things
+     * worth asserting are that the field round-trips and that it reaches the
+     * public page -- a shape the buyer page cannot read is no plan at all.
+     */
+    const { slug, event } = await makeEvent(tokens.organiser, `venue${Date.now()}`, [
+      tierBody({ nameFr: "Tribune", priceCents: 30000, capacity: 4, zoneFr: "T" }),
+      tierBody({ nameFr: "Virage", priceCents: 10000, capacity: 6, zoneFr: "V" }),
+    ]);
+    slugs.push(slug);
+
+    record("a new event defaults to STAGE", event.venueKind === "STAGE", `${event.venueKind}`);
+
+    const set = await expectStatus("PATCH venueKind", "PATCH", `/api/organiser/events/${slug}`, 200, {
+      token: tokens.organiser,
+      body: { venueKind: "STADIUM" },
+    });
+    record("the change is stored", set.data?.event?.venueKind === "STADIUM", `${set.data?.event?.venueKind}`);
+
+    const pub = await call("GET", `/api/events/${slug}`);
+    record(
+      "the public page is told the shape AND the zones",
+      pub.data?.event?.venueKind === "STADIUM" && (pub.data?.event?.tiers ?? []).length === 2,
+      `${pub.data?.event?.venueKind} / ${(pub.data?.event?.tiers ?? []).length} tier(s)`,
+    );
+
+    await expectStatus("an unknown shape is refused", "PATCH", `/api/organiser/events/${slug}`, 400, {
+      token: tokens.organiser,
+      body: { venueKind: "CATHEDRAL" },
+    });
+  }
   // ─────────────────────────────────────────────────────────── resale ──
   setGroup("RESALE  /api/resale/*");
   {

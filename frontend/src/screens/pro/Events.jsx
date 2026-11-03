@@ -39,6 +39,10 @@ export default function Events() {
   // cannot be deleted and rebuilt, so a typo in the venue was permanent.
   const [editCategory, setEditCategory] = useState("festivals");
   const [editVenueFr, setEditVenueFr] = useState("");
+  // The SHAPE of the room, which decides how the public site plan is
+  // drawn. Separate from the venue NAME beside it: "Grand Théâtre" does
+  // not tell the page whether to draw rows facing a stage or a bowl.
+  const [editVenueKind, setEditVenueKind] = useState("STAGE");
   const [editVenueAr, setEditVenueAr] = useState("");
   const [editAddress, setEditAddress] = useState("");
   const [editImage, setEditImage] = useState("");
@@ -118,6 +122,7 @@ export default function Events() {
     setEditCity(event.city);
     setEditCategory(event.category ?? "festivals");
     setEditVenueFr(event.venueFr ?? "");
+    setEditVenueKind(event.venueKind ?? "STAGE");
     setEditVenueAr(event.venueAr ?? "");
     setEditAddress(event.address ?? "");
     setEditImage(event.image ?? "");
@@ -138,6 +143,7 @@ export default function Events() {
         category: editCategory,
         city: editCity,
         venueFr: editVenueFr,
+        venueKind: editVenueKind,
         venueAr: editVenueAr,
         address: editAddress,
         image: editImage,
@@ -528,6 +534,26 @@ export default function Events() {
               )}
             </Field>
           </div>
+          <Field label={t.venueKindLabel} hint={t.venueKindHint}>
+            {({ id, describedBy, invalid }) => (
+              <Dropdown
+                id={id}
+                describedBy={describedBy}
+                value={editVenueKind}
+                onChange={setEditVenueKind}
+                label={t.venueKindLabel}
+                triggerClassName={triggerControlClass({ invalid })}
+                options={[
+                  { value: "STAGE", label: t.venueStage },
+                  { value: "HALL", label: t.venueHall },
+                  { value: "STADIUM", label: t.venueStadium },
+                  { value: "COURSE", label: t.venueCourse },
+                  { value: "EXPO", label: t.venueExpo },
+                  { value: "OPEN_AIR", label: t.venueOpenAir },
+                ]}
+              />
+            )}
+          </Field>
           <Field label={t.addressLabel} hint={t.addressHint}>
             {({ id, describedBy, invalid }) => (
               <Input id={id} describedBy={describedBy} invalid={invalid} value={editAddress} onChange={(e) => setEditAddress(e.target.value)} minLength={3} />

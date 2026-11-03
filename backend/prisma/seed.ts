@@ -95,6 +95,29 @@ async function seedPermissions() {
   }
 }
 
+/**
+ * A reasonable venue shape for a seeded event.
+ *
+ * Category alone is not enough -- a sport event can be a stadium match or a
+ * road race, and both exist in this catalogue -- so the two that category
+ * gets wrong are matched by name first.
+ */
+function venueKindFor(event: { slug: string; titleFr: string; category: string }) {
+  const name = `${event.slug} ${event.titleFr}`;
+  if (/derby|stade/i.test(name)) return "STADIUM" as const;
+  if (/plage|beach|jardin|rempart|oasis/i.test(name)) return "OPEN_AIR" as const;
+  const byCategory: Record<string, "STAGE" | "HALL" | "COURSE" | "EXPO"> = {
+    concert: "STAGE",
+    festivals: "STAGE",
+    nightlife: "STAGE",
+    culture: "HALL",
+    humour: "HALL",
+    sport: "COURSE",
+    salons: "EXPO",
+  };
+  return byCategory[event.category] ?? "STAGE";
+}
+
 async function main() {
   await seedPermissions();
 
@@ -127,6 +150,10 @@ async function main() {
         city: event.city,
         venueFr: event.venueFr,
         venueAr: event.venueAr,
+        // A starting shape per category, so a fresh database is not
+        // sixteen events all claiming to be the same room. The
+        // organiser changes it per event; this is only a default.
+        venueKind: venueKindFor(event),
         address: event.address,
         startAt: new Date(`${event.start}T${event.time ?? "00:00"}:00`),
         endAt: new Date(`${event.end}T23:59:59`),

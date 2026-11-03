@@ -21,6 +21,28 @@ enum Role {
   ADMIN
 }
 
+/// How a venue is laid out, for drawing the site plan.
+///
+/// Six shapes rather than a free drawing tool: an organiser filling in one
+/// field gets an honest plan, where a canvas editor would get skipped and
+/// leave the event with none at all. Each one is a genuinely different
+/// arrangement, not a label on the same picture.
+enum VenueKind {
+  /// Everything faces one stage: concerts, festivals, club nights.
+  STAGE
+  /// Seated room facing a stage, usually numbered: theatre, comedy, opera.
+  HALL
+  /// Tiers wrapping a pitch or floor on several sides.
+  STADIUM
+  /// A route rather than a room — marathons, rallies, street events. Zones
+  /// are start waves or distances, not places to stand.
+  COURSE
+  /// Halls of stands, walked rather than watched: salons, trade fairs.
+  EXPO
+  /// Open ground with no fixed front: beaches, gardens, ramparts.
+  OPEN_AIR
+}
+
 enum EventStatus {
   DRAFT
   PUBLISHED
@@ -162,6 +184,23 @@ model Event {
   venueFr String @map("venue_fr")
   venueAr String @map("venue_ar")
   address String
+
+  /// What SHAPE the venue is, which decides how the site plan is drawn.
+  ///
+  /// The plan used to be three hardcoded shapes — a stage, a VIP wedge and a
+  /// lawn — identical on every event. A marathon was shown a VIP zone it has
+  /// no concept of, a numbered theatre was shown a lawn, and an event with
+  /// two zones still got three blocks. It described one venue and was wrong
+  /// about every other.
+  ///
+  /// Deliberately NOT inferred from `category`: a culture event can be in a
+  /// box theatre or a Roman amphitheatre, and those are not the same room.
+  /// The organiser knows which; nobody else does.
+  ///
+  /// STAGE is the default because it is the old hardcoded arrangement, so
+  /// every existing event keeps exactly the plan it had until someone says
+  /// otherwise.
+  venueKind VenueKind @default(STAGE) @map("venue_kind")
 
   startAt DateTime @map("start_at")
   endAt   DateTime @map("end_at")

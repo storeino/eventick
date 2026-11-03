@@ -14,6 +14,8 @@ export function publicEvent(event: EventWithTiers, remainingByTier: Record<strin
     category: event.category,
     city: event.city,
     venueFr: event.venueFr,
+    // Drives the site plan: the shape of the room, not its name.
+    venueKind: event.venueKind,
     venueAr: event.venueAr,
     address: event.address,
     start: event.startAt.toISOString(),

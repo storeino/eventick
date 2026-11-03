@@ -198,6 +198,8 @@ const createEventSchema = z.object({
   category: z.string(),
   city: z.string(),
   venueFr: z.string(),
+  /** How the site plan is drawn. Defaults to STAGE in the schema. */
+  venueKind: z.enum(["STAGE", "HALL", "STADIUM", "COURSE", "EXPO", "OPEN_AIR"]).optional(),
   venueAr: z.string(),
   address: z.string(),
   start: z.string(),
@@ -380,6 +382,7 @@ const updateEventSchema = z.object({
   category: z.string().min(2).optional(),
   city: z.string().optional(),
   venueFr: z.string().min(2).optional(),
+  venueKind: z.enum(["STAGE", "HALL", "STADIUM", "COURSE", "EXPO", "OPEN_AIR"]).optional(),
   venueAr: z.string().min(2).optional(),
   address: z.string().min(3).optional(),
   image: z.string().optional(),
