@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Check, ChevronDown, LayoutDashboard, LogOut, MapPin, Menu, Moon, Plus, Search, Sun, Tag, Ticket, User, X } from "lucide-react";
+import { Check, ChevronDown, LayoutDashboard, LogOut, MapPin, Menu, Moon, Search, Sun, Tag, Ticket, User, X } from "lucide-react";
 import { useAuth } from "../../AuthContext";
 import { useCart } from "../../CartContext";
 import { useCatalog } from "../../useCatalog";
@@ -413,26 +413,19 @@ export function SiteHeader({ overlay = false }) {
                       <Ticket className="size-4 shrink-0 text-muted" aria-hidden />
                       {t("account")}
                     </PopoverItem>
-                    {/* Resale and Create, the two things a signed-in person
-                        comes back for.
+                    {/* Resale lives here because it has nowhere else to go:
+                        it was taken out of the top bar for width, and that
+                        bar is lg-only anyway, so on a tablet this menu is
+                        the only way in.
 
-                        Resale is also in the top nav, but the nav is lg-only
-                        -- on a tablet this popover is the only way in. Create
-                        is the pink button two inches to the left, repeated
-                        here on purpose: that button is hidden below sm, and
-                        someone looking for "the thing I do with my account"
-                        opens this menu rather than scanning the bar. */}
+                        "Create an event" is deliberately NOT repeated here.
+                        It is the pink button two inches to the left, and two
+                        controls for one action that close together is noise
+                        rather than convenience. Below sm, where that button
+                        is hidden, the mobile drawer carries it instead. */}
                     <PopoverItem as={Link} to="/reventes" onClick={close}>
                       <Tag className="size-4 shrink-0 text-muted" aria-hidden />
                       {t("navResales")}
-                    </PopoverItem>
-                    <PopoverItem
-                      as={Link}
-                      to={canUsePro ? "/organiser" : "/devenir-organisateur"}
-                      onClick={close}
-                    >
-                      <Plus className="size-4 shrink-0 text-muted" aria-hidden />
-                      {t("create")}
                     </PopoverItem>
                     {/* Pro moved here from the top nav, which had no room
                         left for it once the header got trimmed to 3 items
