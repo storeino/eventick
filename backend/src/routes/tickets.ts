@@ -7,9 +7,9 @@ import { publicTicket } from "../lib/serialize.js";
 import { renderTicketsPdf } from "../lib/ticket-pdf.js";
 import { committedForTier } from "../lib/availability.js";
 import { ticketPayload } from "../lib/ticket-signature.js";
-import { cancelPolicy, exchangeTicket, renameHolder, selfCancelTicket } from "../lib/ticket-admin.js";
+import { exchangeTicket, renameHolder } from "../lib/ticket-admin.js";
 import { shareTicket } from "../lib/share.js";
-import { authoriseOrderOrOrganiser, presentedToken, requireTicketAccess, requireTicketAccessWithSession, tokenMatchesTicket } from "../lib/order-access.js";
+import { authoriseOrderOrOrganiser, presentedToken, requireTicketAccess, tokenMatchesTicket } from "../lib/order-access.js";
 
 export const ticketsRouter = Router();
 
@@ -141,14 +141,13 @@ ticketsRouter.post(
 // ticket id could cancel, rename, exchange, resell or give away a seat they
 // had never paid for.
 
-/** What the holder may do with this ticket right now — lets the UI show the
- * cancellation deadline instead of offering a button that will fail. */
+/** What the holder may do with this ticket right now, so the UI shows only
+ * the actions that would succeed rather than ones certain to fail. */
 ticketsRouter.get(
   "/:id/options",
   optionalAuth,
   asyncHandler(async (req, res) => {
     const ticket = await requireTicketAccess(req, param(req, "id"));
-    const policy = cancelPolicy(ticket);
 
     // Zones they could move to, with the extra due for each.
     const tiers = await prisma.ticketTier.findMany({
@@ -212,7 +211,6 @@ ticketsRouter.get(
 
     res.json({
       status: ticket.status,
-      cancel: policy,
       exchange: exchangeable,
       share: openShare ? { id: openShare.id, token: openShare.token } : null,
       shareable:
@@ -247,17 +245,15 @@ ticketsRouter.get(
   }),
 );
 
-ticketsRouter.post(
-  "/:id/cancel",
-  optionalAuth,
-  asyncHandler(async (req, res) => {
-    // Refunds real money, so the order link alone is not enough -- see
-    // requireTicketAccessWithSession.
-    const ticket = await requireTicketAccessWithSession(req, param(req, "id"));
-    const result = await selfCancelTicket(ticket.id);
-    res.json(result);
-  }),
-);
+/*
+ * There is no POST /:id/cancel. A buyer cannot cancel their own seat.
+ *
+ * The route made sense while tickets were refundable. Now that they are final
+ * sale it would have given up the seat and kept the charge, which is a worse
+ * deal than doing nothing — see lib/ticket-admin.ts. A holder who cannot
+ * attend lists the seat for resale instead, which frees it for the waitlist
+ * just the same and pays them face value.
+ */
 
 const exchangeSchema = z.object({ tierId: z.string() });
 

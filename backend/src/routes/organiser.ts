@@ -389,7 +389,6 @@ const updateEventSchema = z.object({
   aboutAr: z.string().min(3).optional(),
   ageFr: z.string().min(1).optional(),
   ageAr: z.string().min(1).optional(),
-  cancelCutoffHours: z.number().int().min(0).max(8760).optional(),
   /** Hand the event to a different organiser. Admin-only, and refused once
    * the event has settled money — see the route below. */
   organiserId: z.string().optional(),
@@ -1629,7 +1628,6 @@ const eventSettingsSchema = z.object({
   /** 0 = unlimited. */
   maxPerBuyer: z.number().int().min(0).max(100).optional(),
   allowResale: z.boolean().optional(),
-  cancelCutoffHours: z.number().int().min(0).max(8760).optional(),
 });
 
 /**
@@ -1650,7 +1648,7 @@ organiserRouter.patch(
     const updated = await prisma.event.update({
       where: { id: event.id },
       data: body,
-      select: { maxPerBuyer: true, allowResale: true, cancelCutoffHours: true },
+      select: { maxPerBuyer: true, allowResale: true },
     });
 
     res.json(updated);

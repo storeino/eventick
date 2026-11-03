@@ -177,8 +177,9 @@ model Event {
   popularity Int     @default(0)
   instant    Boolean @default(true) // sold instantly vs waitlist-only when sold out
 
-  /// Hours before the start when buyers may no longer cancel themselves.
-  /// 0 disables self-cancellation, leaving it to the organiser.
+  /// DEAD — buyer self-cancellation was removed when tickets became final
+  /// sale, so nothing reads this. Kept because dropping the column would
+  /// destroy rows to no purpose; delete it if the policy never comes back.
   cancelCutoffHours Int @default(48) @map("cancel_cutoff_hours")
 
   /// Tickets ONE BUYER may hold for this event, across every order they

@@ -10,8 +10,9 @@
  *
  *   - POST /organiser/orders/:id/refund — an organiser returning money on any
  *     order, for any reason.
- *   - the refund inside selfCancelTicket — a buyer cancelling their own seat
- *     and being paid out.
+ *   - POST /tickets/:id/cancel — a buyer cancelling their own seat. First its
+ *     refund was removed, then the route itself: a cancel that paid nothing
+ *     handed the seat back to the organiser and kept the buyer's money.
  *
  * What is deliberately NOT removed, and is checked here so a future cleanup
  * does not take it out by association:
@@ -98,7 +99,7 @@ async function teardown() {
 }
 
 /** A throwaway published event owned by the demo organiser. */
-async function makeEvent(name, organiserId, { priceCents = 30000, capacity = 10, cancelCutoffHours = 48 } = {}) {
+async function makeEvent(name, organiserId, { priceCents = 30000, capacity = 10 } = {}) {
   const start = new Date(Date.now() + 30 * 86_400_000);
   return prisma.event.create({
     data: {
@@ -125,7 +126,6 @@ async function makeEvent(name, organiserId, { priceCents = 30000, capacity = 10,
       // This suite buys repeatedly as one account; the per-buyer cap is
       // covered by live-ticketing-test and would only obstruct here.
       maxPerBuyer: 0,
-      cancelCutoffHours,
       tiers: {
         create: {
           nameFr: "Place",
@@ -190,33 +190,37 @@ async function main() {
     );
     check("and nothing was returned", (await refundedOn(orderId)) === 0, `${mad(await refundedOn(orderId))} MAD`);
 
-    // The buyer cancelling their own seat: allowed, but it is not a refund.
+    /*
+     * The buyer cancelling their own seat: the route is GONE.
+     *
+     * It survived the first pass of this policy as "allowed, but pays
+     * nothing", which was worse than removing it — the seat went back to
+     * the organiser to resell while the buyer kept the whole charge. The
+     * only honest exit for someone who cannot attend is resale, which
+     * frees the seat exactly the same way and pays them face value.
+     */
     const order = await prisma.order.findUniqueOrThrow({
       where: { id: orderId },
       include: { tickets: { select: { id: true, status: true } } },
     });
     const ticketId = order.tickets[0].id;
     const selfCancel = await call("POST", `/api/tickets/${ticketId}/cancel`, { token: customer, body: {} });
-    check("a buyer may still cancel their own seat", selfCancel.status === 200, `${selfCancel.status}`);
     check(
-      "but it returns no money",
-      selfCancel.data?.refundedCents === 0 && (await refundedOn(orderId)) === 0,
-      `response ${selfCancel.data?.refundedCents} · order ${mad(await refundedOn(orderId))} MAD`,
+      "a buyer cannot cancel their own seat at all",
+      selfCancel.status === 404,
+      `${selfCancel.status}${selfCancel.status === 404 ? "" : " — the route is back"}`,
     );
+    check("and nothing was refunded", (await refundedOn(orderId)) === 0, `${mad(await refundedOn(orderId))} MAD`);
 
     const after = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { status: true } });
-    check("the seat really is given up, not just un-refunded", after.status === "CANCELLED", after.status);
+    check("the seat is still the buyer's", after.status === "VALID", after.status);
 
-    /*
-     * The seat must go back into the pool. That is the entire remaining
-     * reason to offer self-cancellation at all — an empty seat on the night
-     * helps nobody — so if this breaks, the feature has no purpose left.
-     */
+    // And the seat was never released to the organiser — 2 of 10 sold.
     const avail = await call("GET", `/api/orders/availability/${event.slug}`);
     check(
-      "and the seat returns to the pool",
-      avail.data?.remaining?.[event.tiers[0].id] === 9,
-      `remaining=${avail.data?.remaining?.[event.tiers[0].id]} (10 capacity, 2 sold, 1 given up)`,
+      "the seat did not go back on sale",
+      avail.data?.remaining?.[event.tiers[0].id] === 8,
+      `remaining=${avail.data?.remaining?.[event.tiers[0].id]} (10 capacity, 2 sold)`,
     );
   }
 

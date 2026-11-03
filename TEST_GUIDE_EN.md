@@ -225,7 +225,7 @@ one nobody reads.
 **16 events** across Casablanca, Rabat, Marrakech, Tanger, Agadir, Essaouira, Fès and Dakhla — **all owned by the organiser account**. (They used to be admin-owned, which modelled defect #26 as if it were the design: `organiserId` is what decides who the payout pays.)
 **Promo codes:** `SAFRAN15` (−15 %) and `CASA50` (−50 MAD)
 **Commission plans:** Starter 5 % · Pro 3 % + 499 MAD/month · Business 2 % + 1 999 MAD/month — Starter is the default
-**Rules:** seats are held **15 minutes** · buyers may cancel up to **48 h** before the event · one buyer may hold **10 tickets** per event · resale is **off** until the organiser turns it on
+**Rules:** seats are held **15 minutes** · tickets are **final sale** (resale is the exit, not a refund) · one buyer may hold **10 tickets** per event · resale is **off** until the organiser turns it on
 
 > 💡 The last two are per-event defaults an organiser can change — Pro →
 > **Événements** → the sliders icon. Checks 16 and 18 cover them.
@@ -308,9 +308,9 @@ whether the token came along.
 3. In the window where the ticket *does* open, click **"Afficher le pass d'accès"**.
 4. Scroll to **"Gérer ce billet"**.
 
-**✔️ You must see** a panel offering **"Corriger le nom"** — and a box explaining that an account is needed to cancel, resell or give the ticket away.
+**✔️ You must see** a panel offering **"Corriger le nom"** — and a box explaining that an account is needed to resell or give the ticket away.
 
-**✔️ You must NOT see** **"Annuler et me faire rembourser"** or **"Offrir ce billet"** while signed out.
+**✔️ You must NOT see** **"Revendre ce billet"** or **"Offrir ce billet"** while signed out.
 
 > 🎯 **This is the whole check.** A forwarded link can show a ticket. It cannot spend your money or hand away your seat.
 
@@ -319,7 +319,9 @@ whether the token came along.
 ```bash
 # Replace TICKET_ID with the real id from your /billet/… URL
 curl -s -w "\n  HTTP %{http_code}\n" \
-  -X POST 'http://localhost:4100/api/tickets/TICKET_ID/cancel'
+  -X POST 'http://localhost:4100/api/resale/listings' \
+  -H 'content-type: application/json' \
+  -d '{"ticketId":"TICKET_ID"}'
 ```
 
 **✔️ You must see** `{"error":"This order is not yours"}` and **HTTP 403**.
@@ -336,7 +338,7 @@ Every row below was verified against the API with a real guest token — the
 | `GET /api/tickets/:id` with **no** token | **403** — a link is required |
 | `GET /api/tickets/:id` **with** the token | **200** — they can see their ticket |
 | `PATCH /api/tickets/:id/holder` with the token | **200** — they may fix a misspelled name |
-| `POST /api/tickets/:id/cancel` with the token | **403** *"Create an account to manage this ticket"* |
+| `POST /api/resale/listings` with the token | **403** *"Create an account to manage this ticket"* |
 | `POST /api/tickets/:id/transfer` with the token | **401/403** — giving the seat away needs an account |
 
 > 🎯 Read that bottom half again. The token is enough to **use** a ticket and
@@ -365,7 +367,7 @@ Every row below was verified against the API with a real guest token — the
 
 3. Go back to the ticket page and click the claim button again.
 
-**✔️ You must see** a success toast, and the management panel now shows **"Annuler et me faire rembourser"** and **"Offrir ce billet"**.
+**✔️ You must see** a success toast, and the management panel now shows **"Revendre ce billet"** and **"Offrir ce billet"**.
 
 ### Step 3 — The order is now yours
 
@@ -2133,7 +2135,7 @@ npm test
 | Some error messages appear in French | Server messages are not translated; the interface is |
 | The ticket PDF is French even in Arabic | Deliberate — the PDF engine cannot shape Arabic text |
 | A confirmation link shows nothing in another browser | Correct. The token is the credential; without it there is no access |
-| **"Annuler et me faire rembourser"** is missing | You are not signed in. That is check 2 |
+| **"Revendre ce billet"** is missing | You are not signed in, or the organiser has not enabled resale. That is check 2 |
 | An event cannot be deleted | It has orders. Hide it instead — the history is real |
 | The admin appears in "Qui vend" | Correct — it owns the 14 seeded events. The row shows its role |
 | A floating **"N"** on the left edge | The Next.js dev indicator. Dev-only, never in production |

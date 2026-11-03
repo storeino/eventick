@@ -8,8 +8,8 @@
  *     const isGuestOrder = ticket.order.customerId === null;
  *     if (!isGuestOrder && ticket.order.customerId !== userId) throw 403;
  *
- * which means anyone holding a guest ticket's id could cancel it, rename its
- * holder, exchange it, list it for resale, or give it away. "No account" had
+ * which means anyone holding a guest ticket's id could rename its holder,
+ * exchange it, list it for resale, or give it away. "No account" had
  * been implemented as "no check", and those are different things.
  *
  * The fix is an unguessable token on the order — the same pattern this
@@ -19,11 +19,11 @@
  *   1. The link alone lets a guest USE their ticket: read the order, open
  *      the QR, download the PDF, fix a typo, change to a free zone. Guest
  *      checkout must not become login-only; that is the feature, not the bug.
- *   2. The link alone does NOT let anyone SPEND or DISPOSE of it — cancel
- *      for a refund, resell, give away. Links travel (forwarded,
- *      screenshotted, left in a shared thread), so a copy must not be able
- *      to refund the buyer's money or hand their seat to a stranger. Those
- *      need a real account, reached by claiming the order.
+ *   2. The link alone does NOT let anyone DISPOSE of it — sell the seat on,
+ *      or give it away. Links travel (forwarded, screenshotted, left in a
+ *      shared thread), so a copy must not be able to sell the buyer's seat
+ *      out from under them or hand it to a stranger. Those need a real
+ *      account, reached by claiming the order.
  *   3. A stranger holding only the id can read nothing sensitive and write
  *      nothing at all.
  *   4. A registered buyer's tickets stay reachable only by that buyer, which
@@ -176,12 +176,9 @@ record("renames the holder on their own ticket", rename.status === 200, `${renam
 //
 // A guest's only credential is the link they were given, and links travel:
 // forwarded, screenshotted, left in a shared thread. That is an acceptable
-// key for opening a ticket at the gate, but not for refunding the money or
-// handing the seat to someone else — so those need a real account, and a
-// copy of the link cannot spend what it can show.
-const own = await call("POST", `/api/tickets/${myTickets[1]?.id}/cancel${k(mine.accessToken)}`);
-record("cannot cancel for a refund with the link alone", own.status === 403, `${own.status}`);
-
+// key for opening a ticket at the gate, but not for selling the seat or
+// handing it to someone else — so those need a real account, and a copy of
+// the link cannot spend what it can show.
 const shareOf = await call("POST", "/api/share", {
   orderToken: mine.accessToken,
   body: { ticketId: myTickets[2]?.id },
@@ -214,9 +211,6 @@ const claimed = await call("POST", `/api/orders/${mine.id}/claim`, {
   orderToken: mine.accessToken,
 });
 record("claiming the order into an account works", claimed.status === 200, `${claimed.status}`);
-
-const afterCancel = await call("POST", `/api/tickets/${myTickets[1]?.id}/cancel`, { token: claimerToken });
-record("and then cancelling is allowed", afterCancel.status === 200, `${afterCancel.status}`);
 
 const afterShare = await call("POST", "/api/share", {
   token: claimerToken,
@@ -258,9 +252,6 @@ record("cannot read the victim's ticket options", atkOpts.status === 403, `${atk
 const atkRename = await call("PATCH", `/api/tickets/${v1?.id}/holder`, { body: { holderName: "Pirate" } });
 record("cannot RENAME the victim's ticket holder", atkRename.status === 403, `${atkRename.status}`);
 
-const atkCancel = await call("POST", `/api/tickets/${v1?.id}/cancel`);
-record("cannot CANCEL the victim's ticket", atkCancel.status === 403, `${atkCancel.status}`);
-
 const atkExchange = await call("POST", `/api/tickets/${v1?.id}/exchange`, { body: { tierId: tiers[0].id } });
 record("cannot EXCHANGE the victim's ticket", atkExchange.status === 403, `${atkExchange.status}`);
 
@@ -296,11 +287,16 @@ const regTicket = regRead.data?.order?.tickets?.[0];
 const regRename = await call("PATCH", `/api/tickets/${regTicket?.id}/holder`, { body: { holderName: "Pirate" } });
 record("an anonymous stranger cannot rename it", regRename.status === 403, `${regRename.status}`);
 
-const regCancel = await call("POST", `/api/tickets/${regTicket?.id}/cancel`);
-record("an anonymous stranger cannot cancel it", regCancel.status === 403, `${regCancel.status}`);
+// Self-cancellation no longer exists, so these moved onto resale — the
+// surviving action that disposes of a seat, and the one a thief would want.
+const regList = await call("POST", "/api/resale/listings", { body: { ticketId: regTicket?.id } });
+record("an anonymous stranger cannot sell it", regList.status === 403, `${regList.status}`);
 
-const regOther = await call("POST", `/api/tickets/${regTicket?.id}/cancel`, { token: tokens.organiser });
-record("another LOGGED-IN user cannot cancel it", regOther.status === 403, `${regOther.status}`);
+const regOther = await call("POST", "/api/resale/listings", {
+  token: tokens.organiser,
+  body: { ticketId: regTicket?.id },
+});
+record("another LOGGED-IN user cannot sell it", regOther.status === 403, `${regOther.status}`);
 
 // A token is scoped to its own order, so one guest's link must not open
 // anyone else's order.

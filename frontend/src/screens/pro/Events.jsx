@@ -62,7 +62,6 @@ export default function Events() {
   const [rules, setRules] = useState(null);
   const [rulesMax, setRulesMax] = useState(10);
   const [rulesResale, setRulesResale] = useState(false);
-  const [rulesCutoff, setRulesCutoff] = useState(0);
 
   // The ?organiserId= suffix is only ever meaningful for an admin -- the
   // backend ignores it for anyone else (see requestedOrganiserId in
@@ -226,7 +225,6 @@ export default function Events() {
     setRules(event);
     setRulesMax(event.maxPerBuyer ?? 10);
     setRulesResale(Boolean(event.allowResale));
-    setRulesCutoff(event.cancelCutoffHours ?? 48);
   };
 
   const saveRules = async (e) => {
@@ -235,7 +233,6 @@ export default function Events() {
       await api.patch(`/organiser/events/${rules.slug}/settings`, {
         maxPerBuyer: rulesMax,
         allowResale: rulesResale,
-        cancelCutoffHours: rulesCutoff,
       });
       setRules(null);
       load();
@@ -677,20 +674,6 @@ export default function Events() {
                 max={100}
                 value={rulesMax}
                 onChange={(e) => setRulesMax(Number(e.target.value))}
-              />
-            )}
-          </Field>
-          <Field label={t.cancelCutoff} hint={t.cancelCutoffHint}>
-            {({ id, describedBy, invalid }) => (
-              <Input
-                id={id}
-                describedBy={describedBy}
-                invalid={invalid}
-                type="number"
-                min={0}
-                max={8760}
-                value={rulesCutoff}
-                onChange={(e) => setRulesCutoff(Number(e.target.value))}
               />
             )}
           </Field>

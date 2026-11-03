@@ -35,7 +35,6 @@ export function publicEvent(event: EventWithTiers, remainingByTier: Record<strin
     // to read them back was the organiser's settings endpoint.
     maxPerBuyer: event.maxPerBuyer,
     allowResale: event.allowResale,
-    cancelCutoffHours: event.cancelCutoffHours,
     cancelledAt: event.cancelledAt?.toISOString() ?? null,
     cancelReason: event.cancelReason,
     // Whether the public page may carry schema.org Event markup. Sent so the

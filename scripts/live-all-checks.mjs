@@ -251,11 +251,11 @@ const c2WithToken = await call("GET", `/tickets/${c1Ticket.id}`, undefined, null
 });
 ok("with the token, the ticket opens", c2WithToken.status === 200, `HTTP ${c2WithToken.status}`);
 
-const c2Cancel = await call("POST", `/tickets/${c1Ticket.id}/cancel`, {}, null, {
+const c2List = await call("POST", `/resale/listings`, { ticketId: c1Ticket.id }, null, {
   "x-order-token": c1Sale.key,
 });
-ok("the token alone cannot cancel for a refund", c2Cancel.status === 403,
-  `HTTP ${c2Cancel.status} ${JSON.stringify(c2Cancel.data)?.slice(0, 54)}`);
+ok("the token alone cannot sell the seat", c2List.status === 403,
+  `HTTP ${c2List.status} ${JSON.stringify(c2List.data)?.slice(0, 54)}`);
 
 const c2Transfer = await call("POST", `/tickets/${c1Ticket.id}/transfer`, {}, null, {
   "x-order-token": c1Sale.key,
@@ -587,7 +587,7 @@ const c16More = await call("POST", "/orders/hold", {
 ok("coming back for one more is refused — the cap spans ORDERS", c16More.status >= 400, `HTTP ${c16More.status}`);
 
 const c16Settings = await call("PATCH", `/organiser/events/${c16Slug}/settings`, {
-  maxPerBuyer: 0, allowResale: true, cancelCutoffHours: 24,
+  maxPerBuyer: 0, allowResale: true,
 }, org);
 ok("the rules can be changed after the event exists", c16Settings.status === 200, `HTTP ${c16Settings.status}`);
 ok("maxPerBuyer 0 means unlimited", c16Settings.data?.maxPerBuyer === 0, `${c16Settings.data?.maxPerBuyer}`);

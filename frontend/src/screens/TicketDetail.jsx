@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Copy, Download, Pencil, Printer, Share2, Tag, Ticket as TicketIcon, UserPlus, XCircle } from "lucide-react";
+import { Copy, Download, Pencil, Printer, Share2, Tag, Ticket as TicketIcon, UserPlus } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { QrMark } from "../components/QrMark";
 import { Shell } from "../components/Shell";
@@ -23,7 +23,6 @@ export default function TicketDetail() {
   const [options, setOptions] = useState(null);
   const [busy, setBusy] = useState(false);
   const [shareMessage, setShareMessage] = useState("");
-  const [confirmCancel, setConfirmCancel] = useState(false);
   const [renaming, setRenaming] = useState(null);
 
   const load = useCallback(() => {
@@ -48,8 +47,8 @@ export default function TicketDetail() {
   useEffect(load, [load]);
 
   // Attach this guest order to the signed-in account, which is what unlocks
-  // cancelling, reselling and giving the ticket away. The order token is the
-  // proof -- it is what the buyer demonstrably holds.
+  // reselling and giving the ticket away. The order token is the proof -- it
+  // is what the buyer demonstrably holds.
   const claimOrder = async () => {
     if (busy || !options?.orderId) return;
     setBusy(true);
@@ -59,21 +58,6 @@ export default function TicketDetail() {
       load();
     } catch (err) {
       toast.error(err.status === 409 ? t("claimTaken") : err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const cancelTicket = async () => {
-    if (busy) return;
-    setConfirmCancel(false);
-    setBusy(true);
-    try {
-      await api.post(`/tickets/${ticketId}/cancel`, {});
-      toast.success(t("cancelDone"));
-      load();
-    } catch (err) {
-      toast.error(err.message);
     } finally {
       setBusy(false);
     }
@@ -382,11 +366,10 @@ export default function TicketDetail() {
           <Card className="no-print mt-4">
             <h2 className="font-display text-lg font-bold">{t("manageTicket")}</h2>
 
-            {/* The cancel action is the one with a real consequence (money
-                moves, the ticket dies), so it is the only one in danger
-                colour — everything else here is reversible or routine, and
-                giving them all the same visual weight is what made every
-                button on this page read as equally risky before. */}
+            {/* Nothing here is destructive any more, so nothing is in danger
+                colour. The cancel button used to sit beside these and was the
+                only one that could lose the holder money — it is gone, and
+                resale below is what someone who cannot attend wants instead. */}
             <div className="mt-3 flex flex-wrap gap-2">
               <Button
                 variant="secondary"
@@ -397,26 +380,7 @@ export default function TicketDetail() {
               >
                 {t("fixName")}
               </Button>
-              {options.cancel?.allowed && options.viaSession ? (
-                <Button
-                  variant="danger"
-                  size="sm"
-                  icon={<XCircle className="size-4" />}
-                  onClick={() => setConfirmCancel(true)}
-                  disabled={busy}
-                >
-                  {t("cancelTicket")}
-                </Button>
-              ) : null}
             </div>
-
-            <p className="mt-2 text-xs text-muted">
-              {options.cancel?.allowed
-                ? t("cancelUntil").replace("{n}", String(options.cancel.cutoffHours))
-                : options.cancel?.reason === "self-cancel-disabled"
-                  ? t("cancelDisabled")
-                  : t("cancelClosed")}
-            </p>
 
             {/*
               Resale — the only way a holder recovers their money.
@@ -596,29 +560,6 @@ export default function TicketDetail() {
           </Card>
         ) : null}
       </Container>
-
-      {/* Cancelling refunds money and cannot be undone, so it gets a real
-          dialog. window.confirm could not be styled or fully translated, and
-          some mobile browsers suppress it outright, which would have
-          cancelled the ticket with no prompt shown at all. */}
-      <Modal
-        open={confirmCancel}
-        onClose={() => setConfirmCancel(false)}
-        title={t("cancelTicket")}
-        size="sm"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setConfirmCancel(false)}>
-              {t("cancel")}
-            </Button>
-            <Button variant="danger" loading={busy} onClick={cancelTicket}>
-              {t("cancelTicket")}
-            </Button>
-          </>
-        }
-      >
-        <p className="text-sm leading-relaxed text-muted">{t("confirmCancelTicket")}</p>
-      </Modal>
 
       <Modal
         open={renaming !== null}

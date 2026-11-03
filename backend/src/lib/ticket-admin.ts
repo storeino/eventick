@@ -2,19 +2,28 @@ import { prisma } from "./prisma.js";
 import { HttpError } from "./http.js";
 import { makeTicketRef } from "../domain/ticketRef.js";
 import { seatFor } from "../domain/inventory.js";
-import { offerFreedSeats } from "./waitlist.js";
-import { logger } from "./logger.js";
 
 /**
  * Ticket lifecycle operations that sit between "view it" and "scan it":
- * self-cancellation, exchange between zones, reissue, and renaming the holder.
+ * exchange between zones, reissue, and renaming the holder.
  *
  * Common rules, enforced here rather than repeated per route:
  *  - a USED ticket is history; nothing may change it
  *  - a CANCELLED or TRANSFERRED ticket is no longer the holder's to alter
  *  - NOTHING here returns money. Tickets are final sale; the only refund in
  *    the product is a cancelled event, which runs through event-cancel.ts.
- *    Cancelling or exchanging a seat moves inventory, never the charge.
+ *    Exchanging a seat moves inventory, never the charge.
+ *
+ * There is deliberately no buyer self-cancellation. It existed while tickets
+ * were refundable, where it was a fair trade: give up the seat, get the money
+ * back. Once tickets became final sale the same button became a pure loss —
+ * the holder surrendered the seat AND the price, and the organiser kept both.
+ * Nobody should click that, and offering it invited someone to.
+ *
+ * A holder who cannot attend has resale (lib/resale.ts), which frees the seat
+ * for the waitlist exactly as cancelling did and pays them face value for it.
+ * An organiser can still void a seat without paying, through the order-cancel
+ * route, because that is their decision about their own event.
  */
 
 type TicketWithContext = Awaited<ReturnType<typeof loadTicket>>;
@@ -33,85 +42,6 @@ function assertAlterable(ticket: TicketWithContext): void {
   if (ticket.status === "USED") throw new HttpError(409, "This ticket has already been used at the gate");
   if (ticket.status === "CANCELLED") throw new HttpError(409, "This ticket is cancelled");
   if (ticket.status === "TRANSFERRED") throw new HttpError(409, "This ticket was transferred to someone else");
-}
-
-/** Hours remaining before the event starts. Negative once it has begun. */
-function hoursUntilStart(startAt: Date): number {
-  return (startAt.getTime() - Date.now()) / 3_600_000;
-}
-
-export interface CancelPolicy {
-  allowed: boolean;
-  cutoffHours: number;
-  hoursLeft: number;
-  reason?: string;
-}
-
-/**
- * Whether the BUYER may cancel this themselves right now.
- *
- * Exposed so the UI can show the deadline and hide the button rather than
- * offering an action that will fail — the organiser can always cancel.
- */
-export function cancelPolicy(ticket: TicketWithContext): CancelPolicy {
-  const cutoffHours = ticket.order.event.cancelCutoffHours;
-  const hoursLeft = hoursUntilStart(ticket.order.event.startAt);
-
-  if (cutoffHours === 0) {
-    return { allowed: false, cutoffHours, hoursLeft, reason: "self-cancel-disabled" };
-  }
-  if (ticket.status !== "VALID") {
-    return { allowed: false, cutoffHours, hoursLeft, reason: "not-valid" };
-  }
-  if (hoursLeft < cutoffHours) {
-    return { allowed: false, cutoffHours, hoursLeft, reason: "past-cutoff" };
-  }
-  return { allowed: true, cutoffHours, hoursLeft };
-}
-
-/**
- * Buyer cancels their own ticket and is refunded its face value.
- *
- * Refunds the ticket's price rather than the whole order, because an order
- * can hold several tickets and cancelling one shouldn't void the rest.
- */
-export async function selfCancelTicket(ticketId: string): Promise<{ refundedCents: number }> {
-  const ticket = await loadTicket(ticketId);
-  assertAlterable(ticket);
-
-  const policy = cancelPolicy(ticket);
-  if (!policy.allowed) {
-    if (policy.reason === "self-cancel-disabled") {
-      throw new HttpError(409, "This organiser does not allow self-cancellation — please contact them");
-    }
-    throw new HttpError(
-      409,
-      `Cancellation closed ${policy.cutoffHours}h before the event. Please contact the organiser.`,
-    );
-  }
-
-  await prisma.ticket.update({
-    where: { id: ticketId },
-    data: { status: "CANCELLED", cancelledAt: new Date() },
-  });
-
-  /*
-   * No money is returned. Tickets are final sale.
-   *
-   * This used to refund the seat's face value. Refunds now exist for exactly
-   * one reason — the EVENT was called off, which is the organiser's doing and
-   * not the buyer's. A buyer changing their mind releases the seat but keeps
-   * the charge.
-   *
-   * The cancellation itself is still worth having: it puts the seat back in
-   * the pool and in front of the waitlist, which is better for everyone than
-   * an empty seat on the night. An organiser who does not want that at all
-   * sets cancelCutoffHours = 0, which blocks this route entirely.
-   */
-  logger.info({ ticketId, orderId: ticket.orderId }, "ticket self-cancelled (no refund — final sale)");
-
-  void offerFreedSeats(ticket.order.eventId);
-  return { refundedCents: 0 };
 }
 
 /**

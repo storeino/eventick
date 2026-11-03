@@ -293,7 +293,7 @@ async function main() {
   }
 
   // ────────────────────────────────────── buyer-side self-service ──
-  setGroup("BUYER TICKETS  /api/tickets/:id/{cancel, exchange, holder}");
+  setGroup("BUYER TICKETS  /api/tickets/:id/{exchange, holder}");
   {
     const { slug, event } = await makeEvent(tokens.organiser, `buyer${Date.now()}`, [
       tierBody({ nameFr: "Gradin", priceCents: 20000, capacity: 10, zoneFr: "G" }),
@@ -339,21 +339,14 @@ async function main() {
       body: { tierId: byName.Fosse },
     });
 
-    // Self-cancel
-    const cancelled = await expectStatus("POST own cancel", "POST", `/api/tickets/${t2.id}/cancel`, 200, {
+    // Self-cancellation was REMOVED when tickets became final sale: it
+    // would have taken the seat and kept the money. Asserted as absent so
+    // a re-introduction fails here rather than quietly costing a buyer.
+    await expectStatus("POST own cancel → 404 (route removed)", "POST", `/api/tickets/${t2.id}/cancel`, 404, {
       token: tokens.customer,
     });
-    record(
-      "cancel reports what was refunded",
-      typeof cancelled.data?.refundedCents === "number",
-      `refundedCents=${cancelled.data?.refundedCents}`,
-    );
-    await expectStatus("cancelling it twice → 409", "POST", `/api/tickets/${t2.id}/cancel`, 409, {
-      token: tokens.customer,
-    });
-    await expectStatus("POST cancel a USED ticket → 409", "POST", `/api/tickets/${t3.id}/cancel`, 409, {
-      token: tokens.customer,
-    });
+    const t2After = await call("GET", `/api/tickets/${t2.id}`, { token: tokens.customer });
+    record("the ticket survived the attempt", t2After.data?.ticket?.status === "VALID", `${t2After.data?.ticket?.status}`);
 
     // Someone else's ticket is not yours to touch.
     await expectStatus("PATCH holder of another account's ticket → 403", "PATCH", `/api/tickets/${t1.id}/holder`, 403, {
@@ -361,21 +354,6 @@ async function main() {
       body: { holderName: "Pirate Name" },
     });
 
-    // Cutoff: an organiser can close self-cancellation entirely.
-    await call("PATCH", `/api/organiser/events/${slug}`, {
-      token: tokens.organiser,
-      body: { cancelCutoffHours: 0 },
-    });
-    const fresh = await buy(tokens.customer, slug, byName.Balcon, 1, "Cutoff Test");
-    const opts = await call("GET", `/api/tickets/${fresh.tickets[0].id}/options`, { token: tokens.customer });
-    record(
-      "options report cancellation as disabled",
-      opts.data?.cancel?.allowed === false && opts.data.cancel.reason === "self-cancel-disabled",
-      `allowed=${opts.data?.cancel?.allowed} reason=${opts.data?.cancel?.reason}`,
-    );
-    await expectStatus("cancel when the organiser disabled it → 409", "POST", `/api/tickets/${fresh.tickets[0].id}/cancel`, 409, {
-      token: tokens.customer,
-    });
   }
 
   // ─────────────────────────────────────────────────────────── resale ──

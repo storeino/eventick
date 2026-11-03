@@ -554,18 +554,18 @@ async function main() {
 
     const options = await check("GET /tickets/:id/options drives the manage panel", "GET", `/tickets/${ticketId}/options`, 200, {
       token: tokens.customer,
-      // The panel reads cancel.allowed, exchange[], share and shareable.
+      // The panel reads exchange[], share, shareable and the resale fields.
+      // No cancel: self-cancellation was removed with the route behind it.
       shape: (d) =>
         typeof d?.status === "string" &&
-        typeof d?.cancel?.allowed === "boolean" &&
         Array.isArray(d?.exchange) &&
         "share" in d &&
         typeof d?.shareable === "boolean",
     });
     record(
-      "cancel carries the deadline the panel prints",
-      typeof options.data.cancel.cutoffHours === "number" || options.data.cancel.allowed === false,
-      `allowed=${options.data.cancel.allowed} cutoff=${options.data.cancel.cutoffHours}`,
+      "and offers no cancel policy any more",
+      options.data.cancel === undefined,
+      options.data.cancel === undefined ? "absent" : JSON.stringify(options.data.cancel),
     );
 
     await check("PATCH /tickets/:id/holder corrects the name", "PATCH", `/tickets/${ticketId}/holder`, 200, {
@@ -639,9 +639,6 @@ async function main() {
     await check("a guest cannot give the ticket away", "POST", "/share", 403, {
       orderToken: guestOrderToken,
       body: { ticketId: guestTicketId },
-    });
-    await check("a guest cannot cancel for a refund", "POST", `/tickets/${guestTicketId}/cancel`, 403, {
-      orderToken: guestOrderToken,
     });
     await check("a guest cannot list it for resale", "POST", "/resale/listings", 403, {
       orderToken: guestOrderToken,
@@ -803,9 +800,14 @@ async function main() {
       body: { tierId: byName.Fosse },
     });
 
-    await check("POST /tickets/:id/cancel refunds the holder", "POST", `/tickets/${b.id}/cancel`, 200, {
+    // TicketDetail.jsx no longer renders a cancel button, because the route
+    // behind it is gone — tickets are final sale and resale is the exit.
+    await check("POST /tickets/:id/cancel is gone", "POST", `/tickets/${b.id}/cancel`, 404, {
       token: tokens.customer,
-      shape: (d) => typeof d?.refundedCents === "number",
+    });
+    await check("and /options offers no cancel policy", "GET", `/tickets/${b.id}/options`, 200, {
+      token: tokens.customer,
+      shape: (d) => d?.cancel === undefined,
     });
   }
 
