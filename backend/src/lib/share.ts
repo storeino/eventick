@@ -135,6 +135,15 @@ export async function claimShare(
          * reach the ticket through its own accessToken instead.
          */
         holderId: claimantId,
+        /*
+         * True even when claimantId is null.
+         *
+         * A guest claim has no account to point at, so holderId stays null —
+         * which is also what an ordinary unclaimed ticket looks like. Without
+         * this flag the sender's list could not tell the two apart and went
+         * on showing a ticket a guest had already claimed.
+         */
+        gifted: true,
       },
     });
 

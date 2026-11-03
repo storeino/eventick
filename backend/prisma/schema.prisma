@@ -452,6 +452,18 @@ model Ticket {
   /// to point at and is reached through accessToken instead.
   holderId String? @map("holder_id")
 
+  /// This ticket reached its holder through a claimed share.
+  ///
+  /// Separate from holderId because that column cannot answer the question on
+  /// its own: it is null both for "the buyer still holds this" and for "a
+  /// guest claimed it", and filtering the buyer's list on `holderId is null`
+  /// therefore kept showing them tickets claimed by somebody without an
+  /// account. Verified: a guest claim left the sender's count unchanged.
+  ///
+  /// Always true on a replacement issued by claimShare, whether or not the
+  /// claimer was signed in, so "is this still the buyer's?" has one answer.
+  gifted Boolean @default(false)
+
   order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   /// SetNull, not Cascade: deleting an account must not delete a ticket that
   /// was paid for and may still be admitted. It reverts to the buyer's.

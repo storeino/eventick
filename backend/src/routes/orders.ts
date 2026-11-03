@@ -526,7 +526,15 @@ ordersRouter.get(
       ...o,
       tickets:
         o.customerId === mine
-          ? o.tickets.filter((t) => t.holderId === null || t.holderId === mine)
+          ? /*
+             * Yours unless it has been given away. `!t.gifted` rather than
+             * `holderId === null`: that column is null both for a ticket
+             * nobody has claimed AND for one claimed by a guest, so testing
+             * it alone let a guest-claimed ticket stay in the sender's list.
+             * `holderId === mine` keeps a gift sent TO you on your own order,
+             * which happens when you claim a share from an order you bought.
+             */
+            o.tickets.filter((t) => !t.gifted || t.holderId === mine)
           : o.tickets.filter((t) => t.holderId === mine),
     }));
 
