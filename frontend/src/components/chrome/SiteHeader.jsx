@@ -57,16 +57,15 @@ import { EventTicker } from "./EventTicker";
 // Labels come from categoryLabel() for exactly that reason: it is keyed off
 // the category id, so a link and its text cannot drift apart again.
 //
-// Back to 4 with "Revente". It is deliberately the SHORTEST label in the bar
-// (one word in all three languages) because the trim to 3 was about width,
-// not count -- "Culture & Theatre" and "Espace Pro" were what wrapped. It
-// earns the room: a resale is otherwise reachable only by its own link, so
-// without a way in, a seat somebody is selling is a seat nobody can find.
+// Resale is deliberately NOT here. It was added as a fourth item and taken
+// back out: even as the shortest label in the bar it crowded the search
+// field against the "Create an event" button, which is the one control the
+// header exists to push. It lives in the account popover and the mobile
+// drawer instead -- the same place Pro went, and for the same reason.
 const NAV = [
   { to: "/explorer", key: "explore" },
   { to: "/explorer?cat=festivals", cat: "festivals" },
   { to: "/explorer?cat=nightlife", cat: "nightlife" },
-  { to: "/reventes", key: "navResales" },
 ];
 
 /** A nav item's visible text: the category's own label, or a plain copy key. */
@@ -571,6 +570,19 @@ export function SiteHeader({ overlay = false }) {
                     </Link>
                   </li>
                 ) : null}
+                {/* Resale, named explicitly rather than through NAV: it was
+                    taken out of the top bar for width, and the drawer maps
+                    NAV -- so removing it there silently took it off phones
+                    too, where there is no popover to fall back on. */}
+                <li>
+                  <Link
+                    to="/reventes"
+                    onClick={() => setMenuOpen(false)}
+                    className="block rounded-control px-3 py-3 text-[15px] font-semibold transition hover:bg-paper"
+                  >
+                    {t("navResales")}
+                  </Link>
+                </li>
                 {/* "Create an event" lives in the top bar as a pink button,
                     but that button is `hidden sm:inline-flex` -- so below
                     640px it vanished and was in no menu either. On a phone
