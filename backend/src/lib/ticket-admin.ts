@@ -2,7 +2,6 @@ import { prisma } from "./prisma.js";
 import { HttpError } from "./http.js";
 import { makeTicketRef } from "../domain/ticketRef.js";
 import { seatFor } from "../domain/inventory.js";
-import { refundOrder } from "./refund.js";
 import { offerFreedSeats } from "./waitlist.js";
 import { logger } from "./logger.js";
 
@@ -13,7 +12,9 @@ import { logger } from "./logger.js";
  * Common rules, enforced here rather than repeated per route:
  *  - a USED ticket is history; nothing may change it
  *  - a CANCELLED or TRANSFERRED ticket is no longer the holder's to alter
- *  - the money side always goes through refundOrder, so one ledger records it
+ *  - NOTHING here returns money. Tickets are final sale; the only refund in
+ *    the product is a cancelled event, which runs through event-cancel.ts.
+ *    Cancelling or exchanging a seat moves inventory, never the charge.
  */
 
 type TicketWithContext = Awaited<ReturnType<typeof loadTicket>>;
@@ -94,21 +95,23 @@ export async function selfCancelTicket(ticketId: string): Promise<{ refundedCent
     data: { status: "CANCELLED", cancelledAt: new Date() },
   });
 
-  // Refund only this seat's share. A fully-refunded order is handled by
-  // refundOrder itself (it flips the order to REFUNDED and voids the rest).
-  let refundedCents = 0;
-  try {
-    const result = await refundOrder(ticket.orderId, ticket.tier.priceCents);
-    refundedCents = ticket.tier.priceCents;
-    logger.info({ ticketId, refundedCents: result.refundedCents }, "ticket self-cancelled and refunded");
-  } catch (err) {
-    // The ticket is already void; a refund failure must be visible, not silent.
-    logger.warn({ err, ticketId }, "self-cancel refund failed — ticket voided, money not returned");
-    throw new HttpError(502, "The ticket was cancelled but the refund failed. Please contact support.");
-  }
+  /*
+   * No money is returned. Tickets are final sale.
+   *
+   * This used to refund the seat's face value. Refunds now exist for exactly
+   * one reason — the EVENT was called off, which is the organiser's doing and
+   * not the buyer's. A buyer changing their mind releases the seat but keeps
+   * the charge.
+   *
+   * The cancellation itself is still worth having: it puts the seat back in
+   * the pool and in front of the waitlist, which is better for everyone than
+   * an empty seat on the night. An organiser who does not want that at all
+   * sets cancelCutoffHours = 0, which blocks this route entirely.
+   */
+  logger.info({ ticketId, orderId: ticket.orderId }, "ticket self-cancelled (no refund — final sale)");
 
   void offerFreedSeats(ticket.order.eventId);
-  return { refundedCents };
+  return { refundedCents: 0 };
 }
 
 /**

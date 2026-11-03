@@ -13,7 +13,7 @@ import { committedForTier, remainingByTier } from "../lib/availability.js";
 import { broadcastRateLimit } from "../middleware/rateLimit.js";
 import { sendEmail } from "../lib/email.js";
 import { broadcastHtml } from "../lib/email-templates.js";
-import { reconcileExternalRefund, refundOrder } from "../lib/refund.js";
+import { reconcileExternalRefund } from "../lib/refund.js";
 import { cancelEvent } from "../lib/event-cancel.js";
 import { issueComps, revokeComp } from "../lib/invitations.js";
 import { AUDIT_ACTIONS, recordAudit } from "../lib/audit.js";
@@ -894,39 +894,28 @@ organiserRouter.get(
   }),
 );
 
-const refundSchema = z.object({
-  /** Omit for a full refund of whatever is still outstanding. */
-  amountCents: z.number().int().positive().optional(),
-});
-
-/**
- * Refund an order. Unlike /cancel above this concerns money.
+/*
+ * There is no discretionary refund route any more.
  *
- * CMI has no refund API, so this does NOT move money: it records the refund,
- * voids the tickets on a full one, and emails the buyer. Reversing the
- * transaction is a manual step in the CMI back office, and the refund
- * reference says so.
+ * POST /orders/:id/refund let an organiser return a buyer's money on any
+ * order, for any reason. Tickets are final sale: a refund now happens for
+ * exactly one reason, which is that the EVENT was called off — the
+ * organiser's doing, not the buyer's — and that path runs through
+ * /events/:slug/cancel, which refunds every order at once.
+ *
+ * What remains for an organiser faced with a buyer who wants their money
+ * back:
+ *
+ *  - say no, which is the policy;
+ *  - reverse the charge in the CMI back office and then call
+ *    /orders/:id/reconcile-refund below, so the tickets are voided and the
+ *    books match what the gateway actually did;
+ *  - /orders/:id/cancel, which voids the tickets WITHOUT returning money and
+ *    records that plainly.
+ *
+ * `finance.refund` still gates reconcile-refund, so the permission and
+ * everything granted it keep working.
  */
-organiserRouter.post(
-  "/orders/:id/refund",
-  canRefund,
-  asyncHandler(async (req, res) => {
-    const id = param(req, "id");
-    await requireOwnedOrder(req.user, id);
-    const body = refundSchema.parse(req.body ?? {});
-    const result = await refundOrder(id, body.amountCents ?? null);
-    // Money going back to a buyer, and with CMI it is a manual reversal
-    // someone has to action — so who asked for it matters.
-    recordAudit(req, {
-      action: AUDIT_ACTIONS.ORDER_REFUNDED,
-      subjectType: "order",
-      subjectId: id,
-      subjectLabel: `${(result.refundedCents / 100).toFixed(2)} MAD`,
-      details: { refundedCents: result.refundedCents, full: result.full, refundRef: result.refundRef },
-    });
-    res.json({ ...result, gatewayAction: "Reverse this transaction in the CMI back office." });
-  }),
-);
 
 const reconcileSchema = z.object({
   /** The running TOTAL reversed at CMI for this transaction, in cents. */

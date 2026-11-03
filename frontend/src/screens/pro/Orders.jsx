@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Banknote, Check, Download, ExternalLink, Trash2, Undo2, XCircle } from "lucide-react";
+import { Check, Download, ExternalLink, Trash2, Undo2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api, money } from "../../api";
 import { useI18n } from "../../i18n";
@@ -113,24 +113,15 @@ export default function Orders() {
     toast.success(t.removed);
   };
 
-  const refundOrder = async (order) => {
-    const outstanding = order.totalCents - (order.refundedCents ?? 0);
-    const ok = await confirm({
-      title: t.refundTitle,
-      message: `${t.confirmRefund} ${t.refundOutstanding.replace("{n}", money(outstanding))}`,
-      tone: "warn",
-      confirmLabel: t.refund,
-      cancelLabel: t.cancelBtn,
-    });
-    if (!ok) return;
-    try {
-      await api.post(`/organiser/orders/${order.id}/refund`, {});
-      load();
-      toast.success(t.refundDone);
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
+  /*
+   * No refund action here any more. Tickets are final sale: the only refund
+   * in the product is a cancelled event, which refunds every order at once
+   * from the event's own ↺ action.
+   *
+   * An organiser who has reversed a charge in the CMI back office still has
+   * /orders/:id/reconcile-refund to void the tickets and square the books,
+   * and /orders/:id/cancel to void a seat without returning money.
+   */
 
   const toggleAdmit = async (ticket) => {
     const next = ticket.status === "USED" ? "VALID" : "USED";
@@ -229,7 +220,6 @@ export default function Orders() {
               badgeTone={tone(ticket.status)}
               badgeLabel={label(ticket.status)}
               onToggleAdmit={() => toggleAdmit(ticket)}
-              onRefund={() => refundOrder(order)}
               onCancelOrder={() => cancelOrder(order)}
               onRemoveOrder={() => removeOrder(order)}
             />
@@ -258,7 +248,7 @@ export default function Orders() {
  * button on its own row rather than five icon buttons fighting for the same
  * fixed-width table cell.
  */
-function OrderCard({ order, ticket, locale, t, badgeTone, badgeLabel, onToggleAdmit, onRefund, onCancelOrder, onRemoveOrder }) {
+function OrderCard({ order, ticket, locale, t, badgeTone, badgeLabel, onToggleAdmit, onCancelOrder, onRemoveOrder }) {
   const initial = (order.holderName || "?").trim().slice(0, 1).toUpperCase();
 
   return (
@@ -319,11 +309,6 @@ function OrderCard({ order, ticket, locale, t, badgeTone, badgeLabel, onToggleAd
         >
           <ExternalLink className="size-4" />
         </Link>
-        {order.status === "PAID" ? (
-          <IconBtn label={t.refund} onClick={onRefund}>
-            <Banknote className="size-4" />
-          </IconBtn>
-        ) : null}
         <IconBtn label={t.cancelOrder} onClick={onCancelOrder}>
           <XCircle className="size-4" />
         </IconBtn>
