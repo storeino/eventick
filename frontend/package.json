@@ -9,7 +9,8 @@
     "start": "next start -p 3100",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node ../scripts/live-frontend-test.mjs"
+    "lint": "eslint src",
+    "test": "eslint src && node ../scripts/live-frontend-test.mjs"
   },
   "dependencies": {
     "jsqr": "^1.4.0",

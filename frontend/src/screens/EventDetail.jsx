@@ -4,6 +4,7 @@ import { Calendar, Clock, Heart, MapPin, Minus, ParkingCircle, Plus, QrCode, Shi
 import { toast } from "sonner";
 import { Shell } from "../components/Shell";
 import { EventCard } from "../components/EventCard";
+import { VenuePlan } from "../components/VenuePlan";
 import { api, money, rememberOrderKey } from "../api";
 import { useAuth } from "../AuthContext";
 import { useCart } from "../CartContext";
