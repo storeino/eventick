@@ -43,17 +43,32 @@ function ordered(tiers) {
 const FILLS = ["bg-primary text-primary-fg", "bg-accent text-accent-fg", "bg-brume-deep text-ink", "bg-info text-info-fg", "bg-secondary text-secondary-fg"];
 const DOTS = ["bg-primary", "bg-accent", "bg-brume-deep", "bg-info", "bg-secondary"];
 
-function Zone({ tier, locale, className, style, fill }) {
+/** A zone with nothing left. `remaining` is absent on some payloads, and
+ * "unknown" must not read as "sold out". */
+function isGone(tier) {
+  return typeof tier.remaining === "number" && tier.remaining <= 0;
+}
+
+function Zone({ tier, locale, t, className, style, fill }) {
+  const gone = isGone(tier);
   return (
     <div
       className={cn(
-        "flex min-h-11 items-center justify-center px-3 text-center text-sm font-bold",
+        "flex min-h-11 flex-col items-center justify-center px-3 text-center text-sm font-bold",
         fill,
+        // Drained of colour and dimmed, so a glance at the plan answers
+        // "what can I actually buy" before reading a single zone name.
+        // Not hidden: the zone still exists, and a buyer looking for it
+        // should find it struck through rather than missing.
+        gone && "opacity-45 saturate-0",
         className,
       )}
       style={style}
     >
       <span className="line-clamp-2">{eventText(tier, "name", locale)}</span>
+      {/* Said in words as well as colour: dimming alone fails for anyone
+          with a colour deficiency, and fails everyone on a bright screen. */}
+      {gone ? <span className="text-[10px] font-extrabold uppercase tracking-wide">{t("soldOut")}</span> : null}
     </div>
   );
 }
@@ -83,6 +98,7 @@ function StagePlan({ tiers, locale, t }) {
             key={tier.id}
             tier={tier}
             locale={locale}
+            t={t}
             fill={FILLS[i % FILLS.length]}
             className="mx-auto mt-2"
             style={{
@@ -114,6 +130,7 @@ function HallPlan({ tiers, locale, t }) {
             key={tier.id}
             tier={tier}
             locale={locale}
+            t={t}
             fill={FILLS[i % FILLS.length]}
             className="rounded-control"
             style={{ height: `${Math.max(44, 40 + i * 8)}px` }}
@@ -134,21 +151,21 @@ function StadiumPlan({ tiers, locale, t }) {
   return (
     <div className="grid gap-1.5">
       {first ? (
-        <Zone tier={first} locale={locale} fill={FILLS[0]} className="rounded-t-card" style={{ height: "44px" }} />
+        <Zone tier={first} locale={locale} t={t} fill={FILLS[0]} className="rounded-t-card" style={{ height: "44px" }} />
       ) : null}
       <div className="flex items-stretch gap-1.5">
         {rest[0] ? (
-          <Zone tier={rest[0]} locale={locale} fill={FILLS[1]} className="w-[22%] rounded-s-card [writing-mode:vertical-rl] rotate-180" />
+          <Zone tier={rest[0]} locale={locale} t={t} fill={FILLS[1]} className="w-[22%] rounded-s-card [writing-mode:vertical-rl] rotate-180" />
         ) : null}
         <div className="flex flex-1 items-center justify-center rounded-card border-2 border-dashed border-line/30 bg-paper py-10 text-xs font-bold uppercase tracking-wide text-muted">
           {t("venuePitch")}
         </div>
         {rest[1] ? (
-          <Zone tier={rest[1]} locale={locale} fill={FILLS[2]} className="w-[22%] rounded-e-card [writing-mode:vertical-rl]" />
+          <Zone tier={rest[1]} locale={locale} t={t} fill={FILLS[2]} className="w-[22%] rounded-e-card [writing-mode:vertical-rl]" />
         ) : null}
       </div>
       {rest.slice(2).map((tier, i) => (
-        <Zone key={tier.id} tier={tier} locale={locale} fill={FILLS[(i + 3) % FILLS.length]} className="rounded-b-card" style={{ height: "44px" }} />
+        <Zone key={tier.id} tier={tier} locale={locale} t={t} fill={FILLS[(i + 3) % FILLS.length]} className="rounded-b-card" style={{ height: "44px" }} />
       ))}
     </div>
   );
@@ -183,6 +200,7 @@ function CoursePlan({ tiers, locale, t }) {
             key={tier.id}
             tier={tier}
             locale={locale}
+            t={t}
             fill={FILLS[i % FILLS.length]}
             className="rounded-full"
             style={{ height: "44px", width: `${Math.min(100, 55 + i * 15)}%` }}
@@ -207,6 +225,7 @@ function ExpoPlan({ tiers, locale, t }) {
             key={tier.id}
             tier={tier}
             locale={locale}
+            t={t}
             fill={FILLS[i % FILLS.length]}
             className="rounded-control"
             style={{ height: "64px" }}
@@ -218,7 +237,7 @@ function ExpoPlan({ tiers, locale, t }) {
 }
 
 /** OPEN_AIR — open ground, no fixed front: soft blobs rather than a bowl. */
-function OpenAirPlan({ tiers, locale }) {
+function OpenAirPlan({ tiers, locale, t }) {
   const zones = ordered(tiers);
   return (
     <div className="grid gap-2">
@@ -227,6 +246,7 @@ function OpenAirPlan({ tiers, locale }) {
           key={tier.id}
           tier={tier}
           locale={locale}
+          t={t}
           fill={FILLS[i % FILLS.length]}
           className="mx-auto rounded-[40%_60%_55%_45%/55%_45%_60%_40%]"
           style={{ height: "60px", width: `${Math.min(100, 70 + i * 12)}%` }}
@@ -283,10 +303,12 @@ export function VenuePlan({ event }) {
           drawn size is its position in the room, not how many fit in it. */}
       <div className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-semibold text-muted">
         {legend.map((tier, i) => (
-          <span key={tier.id} className="inline-flex items-center gap-1.5">
-            <span className={cn("size-2.5 rounded-full", DOTS[i % DOTS.length])} aria-hidden />
-            {eventText(tier, "name", locale)}
-            <span className="font-normal tabular-nums">· {groupNumber(tier.capacity)}</span>
+          <span key={tier.id} className={cn("inline-flex items-center gap-1.5", isGone(tier) && "opacity-55")}>
+            <span className={cn("size-2.5 rounded-full", DOTS[i % DOTS.length], isGone(tier) && "saturate-0")} aria-hidden />
+            <span className={cn(isGone(tier) && "line-through")}>{eventText(tier, "name", locale)}</span>
+            <span className="font-normal tabular-nums">
+              · {isGone(tier) ? t("soldOut") : groupNumber(tier.capacity)}
+            </span>
           </span>
         ))}
       </div>

@@ -503,6 +503,26 @@ async function main() {
       token: tokens.organiser,
       body: { planOrder: -1 },
     });
+
+    /*
+     * Sold-out shading reads `remaining` straight off the public payload,
+     * so what matters is that the figure is there and goes to 0 when the
+     * zone fills. A plan that greys the wrong zone is worse than one that
+     * greys none.
+     */
+    const before = (await call("GET", `/api/events/${slug}`)).data?.event?.tiers ?? [];
+    const target = before.find((x) => x.id === cheap.id);
+    record("the plan is told what is left", typeof target?.remaining === "number", `${target?.remaining}`);
+
+    await buy(tokens.customer, slug, cheap.id, target.remaining, "Vide La Zone");
+    const emptied = (await call("GET", `/api/events/${slug}`)).data?.event?.tiers ?? [];
+    const gone = emptied.find((x) => x.id === cheap.id);
+    record("a filled zone reports 0 left", gone?.remaining === 0, `${gone?.remaining}`);
+    record(
+      "and the others are untouched",
+      emptied.some((x) => x.id !== cheap.id && x.remaining > 0),
+      "yes",
+    );
   }
   // ─────────────────────────────────────────────────────────── resale ──
   setGroup("RESALE  /api/resale/*");
