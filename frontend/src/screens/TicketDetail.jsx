@@ -24,6 +24,7 @@ export default function TicketDetail() {
   const [busy, setBusy] = useState(false);
   const [shareMessage, setShareMessage] = useState("");
   const [renaming, setRenaming] = useState(null);
+  const [confirmZone, setConfirmZone] = useState(null);
 
   const load = useCallback(() => {
     // A share recipient opening this link on another device has their token
@@ -105,15 +106,30 @@ export default function TicketDetail() {
     }
   };
 
+  /*
+   * Moving zone. A downgrade is irreversible and refunds nothing, so the
+   * amount being given up has to be stated and agreed BEFORE it happens --
+   * the list previously said only "no extra charge", which is true and reads
+   * as "free" to someone about to lose the difference.
+   *
+   * The agreement is a real dialog rather than window.confirm: that one
+   * cannot be styled or translated, announces the origin ("localhost:3100
+   * says"), and some mobile browsers suppress it outright -- which here would
+   * have moved the ticket and forfeited the money with no prompt shown at
+   * all. Every other consequential action on this page already uses Modal.
+   */
   const changeZone = async (tierId, forfeitCents = 0) => {
     if (busy) return;
-    // A downgrade is irreversible and refunds nothing, so the amount being
-    // given up has to be stated and agreed BEFORE it happens -- the list
-    // previously said only "no extra charge", which is true and reads as
-    // "free" to someone about to lose the difference.
-    if (forfeitCents > 0 && !window.confirm(t("zoneForfeitConfirm").replace("{n}", money(forfeitCents)))) {
+    if (forfeitCents > 0) {
+      setConfirmZone({ tierId, forfeitCents });
       return;
     }
+    await applyZone(tierId);
+  };
+
+  const applyZone = async (tierId) => {
+    if (busy) return;
+    setConfirmZone(null);
     setBusy(true);
     try {
       await api.post(`/tickets/${ticketId}/exchange`, { tierId });
@@ -560,6 +576,29 @@ export default function TicketDetail() {
           </Card>
         ) : null}
       </Container>
+
+      {/* Agreeing to a forfeit. Danger-coloured because, unlike everything
+          else on this page, confirming it loses the holder money. */}
+      <Modal
+        open={confirmZone !== null}
+        onClose={() => setConfirmZone(null)}
+        title={t("changeZone")}
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmZone(null)}>
+              {t("cancel")}
+            </Button>
+            <Button variant="danger" loading={busy} onClick={() => applyZone(confirmZone.tierId)}>
+              {t("zoneForfeitConfirmCta").replace("{n}", money(confirmZone?.forfeitCents ?? 0))}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-relaxed text-muted">
+          {t("zoneForfeitConfirm").replace("{n}", money(confirmZone?.forfeitCents ?? 0))}
+        </p>
+      </Modal>
 
       <Modal
         open={renaming !== null}

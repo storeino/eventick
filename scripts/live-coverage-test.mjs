@@ -320,6 +320,29 @@ async function main() {
     });
     record("exchange returns the new ticket state", !!down.data, JSON.stringify(down.data).slice(0, 80));
 
+    /*
+     * The forfeit the UI warns about has to be real. A downgrade moves the
+     * seat and keeps the charge: if the order silently shrank, the dialog
+     * telling the holder they lose the difference would be a lie, and the
+     * organiser's payout would be short.
+     */
+    const afterDown = await call("GET", `/api/orders/${order.orderId}`, { token: tokens.customer });
+    record(
+      "a downgrade refunds nothing — the order still shows what was paid",
+      afterDown.data?.order?.totalCents === 3 * 20000 && (afterDown.data?.order?.refundedCents ?? 0) === 0,
+      `total=${afterDown.data?.order?.totalCents} refunded=${afterDown.data?.order?.refundedCents ?? 0}`,
+    );
+
+    // The amounts the screen prints, next to the zone it would move to.
+    const quoted = await call("GET", `/api/tickets/${t2.id}/options`, { token: tokens.customer });
+    const zq = Object.fromEntries((quoted.data?.exchange ?? []).map((z) => [z.nameFr, z]));
+    record(
+      "options quote the exact forfeit and the exact upgrade fee",
+      zq.Balcon?.forfeitCents === 10000 && zq.Balcon?.dueCents === 0 &&
+        zq.Fosse?.dueCents === 20000 && zq.Fosse?.forfeitCents === 0,
+      `Balcon -${zq.Balcon?.forfeitCents} / Fosse +${zq.Fosse?.dueCents}`,
+    );
+
     await expectStatus("POST exchange to a dearer zone → 402", "POST", `/api/tickets/${t2.id}/exchange`, 402, {
       token: tokens.customer,
       body: { tierId: byName.Fosse },
@@ -328,6 +351,37 @@ async function main() {
       token: tokens.customer,
       body: { tierId: "nope-xyz" },
     });
+
+    /*
+     * A FULL zone refuses on capacity.
+     *
+     * The destination here is deliberately the CHEAPER one. Testing this
+     * against a dearer zone proves nothing: 402 (upgrade owes money) fires
+     * before the capacity check is ever reached, so a broken sold-out guard
+     * would still look like a pass. On a downgrade nothing is owed, which
+     * leaves 409 as the only thing that can refuse it.
+     */
+    const { slug: fullSlug, event: fullEvent } = await makeEvent(tokens.organiser, `exfull${Date.now()}`, [
+      tierBody({ nameFr: "Petit", priceCents: 10000, capacity: 1, zoneFr: "P" }),
+      tierBody({ nameFr: "Grand", priceCents: 20000, capacity: 5, zoneFr: "R" }),
+    ]);
+    slugs.push(fullSlug);
+    const fullByName = Object.fromEntries(fullEvent.tiers.map((x) => [x.nameFr, x.id]));
+    await buy(tokens.customer, fullSlug, fullByName.Petit, 1, "Remplit");   // Petit now 0 left
+    const mover = await buy(tokens.customer, fullSlug, fullByName.Grand, 1, "Bouge");
+    const moverId = mover.tickets[0].id;
+
+    const fullOpts = await call("GET", `/api/tickets/${moverId}/options`, { token: tokens.customer });
+    const petit = (fullOpts.data?.exchange ?? []).find((z) => z.nameFr === "Petit");
+    record("options flag the full zone as soldOut", petit?.soldOut === true, `soldOut=${petit?.soldOut}`);
+    record("and it is a downgrade, so price cannot be the refusal", petit?.dueCents === 0, `due=${petit?.dueCents}`);
+
+    await expectStatus("POST exchange into a full cheaper zone → 409", "POST", `/api/tickets/${moverId}/exchange`, 409, {
+      token: tokens.customer,
+      body: { tierId: fullByName.Petit },
+    });
+    const moverAfter = await call("GET", `/api/tickets/${moverId}`, { token: tokens.customer });
+    record("the refused ticket stayed in its own zone", moverAfter.data?.tier?.nameFr === "Grand", `${moverAfter.data?.tier?.nameFr}`);
 
     // State is checked before price: a used ticket is 409, not 402.
     await call("POST", "/api/gate/check-in", {
