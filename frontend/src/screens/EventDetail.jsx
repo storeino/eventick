@@ -209,15 +209,21 @@ export default function EventDetail() {
   return (
     <Shell overlay>
       {/* Deliberately always dark, so the photo stays legible regardless of
-          app theme — see the note on --et-stage in styles.css. Image
-          opacity bumped from 0.5 -> 0.7 (with a stronger bottom-only
-          gradient instead of a wash over the whole frame) so the photo
-          actually reads as a backdrop instead of a dim smudge -- this hero
-          is much shorter than Home's, so the same opacity that worked over
-          a full-viewport canvas just looked washed out here. */}
+          app theme — see the note on --et-stage in styles.css.
+
+          The photo now renders at full opacity. It was 0.7 over a flat
+          `bg-stage`, which is a wash across the whole frame: the picture an
+          organiser chose came out as a grey smudge.
+
+          What is left is a BOTTOM-ONLY scrim, and it is not decoration —
+          the title, the blurb and the date chips sit directly on the image,
+          so with nothing behind them a bright patch of sky or a floodlight
+          makes white text unreadable. Opaque at the very bottom where the
+          text is densest, gone by 60% of the height, so the top two-fifths
+          of the photo are untouched. */}
       <section className="relative -mt-16 overflow-hidden bg-stage pt-16 text-stage-fg">
-        <img src={event.image} alt="" className="absolute inset-0 h-full w-full object-cover opacity-70" />
-        <div className="absolute inset-0 bg-gradient-to-t from-stage via-stage/70 to-stage/10" />
+        <img src={event.image} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-t from-stage via-stage/45 via-60% to-transparent" />
         <div className="relative mx-auto max-w-7xl px-4 py-12 md:px-8 md:py-16">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-primary px-3 py-1 text-xs font-bold uppercase tracking-wide text-primary-fg">

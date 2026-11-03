@@ -180,7 +180,7 @@ export default function ClaimShare() {
               <>
                 <img src={offer.eventImage} alt="" className="h-48 w-full object-cover md:h-60" />
                 <div
-                  className="absolute inset-0 bg-linear-to-t from-stage via-stage/55 to-transparent"
+                  className="absolute inset-0 bg-linear-to-t from-stage via-stage/35 via-55% to-transparent"
                   aria-hidden
                 />
               </>

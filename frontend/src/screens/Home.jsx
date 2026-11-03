@@ -158,15 +158,20 @@ export default function Home() {
         <img
           src="/events/mawazine.jpg"
           alt=""
-          className="absolute inset-0 h-full w-full object-cover object-center opacity-75 brightness-[0.78] saturate-[1.15]"
+          className="absolute inset-0 h-full w-full object-cover object-center saturate-[1.15]"
         />
-        <div className="absolute inset-0 bg-linear-to-t from-stage via-stage/45 to-transparent" />
+        {/* Was opacity-75 AND brightness-[0.78] on top of two scrims -- four
+            dimming layers over one photo, which is why the crowd and the
+            Koutoubia came out as a grey wash. The photo now renders at full
+            brightness and only the scrims remain, because only the scrims
+            are doing work the text depends on. */}
+        <div className="absolute inset-0 bg-linear-to-t from-stage via-stage/30 via-55% to-transparent" />
         {/* Mirrored explicitly for Arabic. Tailwind has no logical gradient
             direction — it only emits `to right`/`to left` and friends, so
             `bg-linear-to-e` compiles to nothing at all — and `rtl:` wins
             here because it adds a selector rather than a second utility on
             the same specificity. */}
-        <div className="absolute inset-0 bg-linear-to-r from-stage/85 via-stage/35 to-transparent rtl:bg-linear-to-l" />
+        <div className="absolute inset-0 bg-linear-to-r from-stage/80 via-stage/25 via-45% to-transparent rtl:bg-linear-to-l" />
         <div className="relative mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center px-4 py-8 md:px-8 md:py-10">
           <div className="max-w-5xl">
             <p className="inline-flex items-center gap-2 rounded-full bg-stage-fg/10 px-3 py-1 text-xs font-semibold">

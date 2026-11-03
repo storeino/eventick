@@ -301,7 +301,7 @@ export default function TicketDetail() {
           {event.image ? (
             <div className="relative h-44 w-full md:h-52">
               <img src={event.image} alt="" className="h-full w-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-stage/90 via-stage/10 to-transparent" />
+              <div className="absolute inset-0 bg-linear-to-t from-stage/75 via-stage/5 to-transparent" />
               <div className="absolute inset-x-5 bottom-4 flex items-center justify-between gap-2">
                 <Badge tone="primary">{tierName}</Badge>
                 <span className="font-mono text-xs font-semibold text-stage-fg">{ticket.ref}</span>
