@@ -5,6 +5,7 @@ import { Shell } from "../components/Shell";
 import { api, money } from "../api";
 import { Badge, Button, Card, Container, Dropdown, EmptyState, ErrorState, LoadingState } from "../ui";
 import { useI18n } from "../i18n";
+import { useAuth } from "../AuthContext";
 import { eventText, intlLocaleTag } from "../utils";
 
 /**
@@ -24,6 +25,10 @@ import { eventText, intlLocaleTag } from "../utils";
 export default function Resales() {
   const { locale, t } = useI18n();
   const navigate = useNavigate();
+  // Staff cannot buy a resold seat (refuseStaffPurchase), so every
+  // listing below would lead them to a 403. The menu entry is hidden
+  // from them; this is for the one who types the URL.
+  const { canUsePro } = useAuth();
   const [params, setParams] = useSearchParams();
   const [resales, setResales] = useState(null);
   const [error, setError] = useState(null);
@@ -68,6 +73,12 @@ export default function Resales() {
 
         <h1 className="mt-3 font-display text-display font-extrabold leading-tight">{t("resaleMarketTitle")}</h1>
         <p className="mt-2 max-w-[62ch] text-sm leading-relaxed text-muted">{t("resaleMarketIntro")}</p>
+
+        {canUsePro ? (
+          <p className="mt-5 rounded-control border border-line/15 bg-paper p-3 text-sm leading-relaxed text-muted">
+            {t("staffNoBuy")}
+          </p>
+        ) : null}
 
         {error ? (
           <ErrorState className="mt-8" body={error} onRetry={load} />

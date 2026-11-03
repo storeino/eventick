@@ -418,15 +418,24 @@ export function SiteHeader({ overlay = false }) {
                         bar is lg-only anyway, so on a tablet this menu is
                         the only way in.
 
+                        Hidden from staff, for the same reason Pro is hidden
+                        from customers below: every seat on that page leads
+                        to /resale/:token/buy, which refuseStaffPurchase
+                        rejects outright. An organiser following this link
+                        would browse a marketplace where every button 403s --
+                        a door with no handle behind it.
+
                         "Create an event" is deliberately NOT repeated here.
                         It is the pink button two inches to the left, and two
                         controls for one action that close together is noise
                         rather than convenience. Below sm, where that button
                         is hidden, the mobile drawer carries it instead. */}
-                    <PopoverItem as={Link} to="/reventes" onClick={close}>
-                      <Tag className="size-4 shrink-0 text-muted" aria-hidden />
-                      {t("navResales")}
-                    </PopoverItem>
+                    {canUsePro ? null : (
+                      <PopoverItem as={Link} to="/reventes" onClick={close}>
+                        <Tag className="size-4 shrink-0 text-muted" aria-hidden />
+                        {t("navResales")}
+                      </PopoverItem>
+                    )}
                     {/* Pro moved here from the top nav, which had no room
                         left for it once the header got trimmed to 3 items
                         to stop "Culture & Théâtre" / "Espace Pro" wrapping
@@ -566,16 +575,22 @@ export function SiteHeader({ overlay = false }) {
                 {/* Resale, named explicitly rather than through NAV: it was
                     taken out of the top bar for width, and the drawer maps
                     NAV -- so removing it there silently took it off phones
-                    too, where there is no popover to fall back on. */}
-                <li>
-                  <Link
-                    to="/reventes"
-                    onClick={() => setMenuOpen(false)}
-                    className="block rounded-control px-3 py-3 text-[15px] font-semibold transition hover:bg-paper"
-                  >
-                    {t("navResales")}
-                  </Link>
-                </li>
+                    too, where there is no popover to fall back on.
+
+                    Hidden from staff, like its copy in the account menu:
+                    buying a resold seat is refused server-side for an
+                    ORGANISER or ADMIN. */}
+                {canUsePro ? null : (
+                  <li>
+                    <Link
+                      to="/reventes"
+                      onClick={() => setMenuOpen(false)}
+                      className="block rounded-control px-3 py-3 text-[15px] font-semibold transition hover:bg-paper"
+                    >
+                      {t("navResales")}
+                    </Link>
+                  </li>
+                )}
                 {/* "Create an event" lives in the top bar as a pink button,
                     but that button is `hidden sm:inline-flex` -- so below
                     640px it vanished and was in no menu either. On a phone

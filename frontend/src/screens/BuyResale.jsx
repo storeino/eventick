@@ -31,7 +31,11 @@ export default function BuyResale() {
   const { token } = useParams();
   const { locale, t } = useI18n();
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
+  // Staff sell rather than buy: refuseStaffPurchase rejects an ORGANISER
+  // or ADMIN at /resale/:token/buy, so without this they would fill in
+  // three fields, press pay and collect a 403 -- a wall at the last step
+  // instead of an explanation at the first. Same rule as EventDetail.
+  const { user, canUsePro, loading: authLoading } = useAuth();
 
   const [listing, setListing] = useState(null);
   const [error, setError] = useState(null);
@@ -172,7 +176,11 @@ export default function BuyResale() {
               three fields and is then sent to sign in. `authLoading` is waited
               on so the prompt does not flash during hydration.
             */}
-            {!authLoading && !user ? (
+            {!authLoading && canUsePro ? (
+              <p className="mt-5 rounded-control border border-line/15 bg-paper p-3 text-sm leading-relaxed text-muted">
+                {t("staffNoBuy")}
+              </p>
+            ) : !authLoading && !user ? (
               <div className="mt-5">
                 <p className="text-sm leading-relaxed text-muted">{t("resaleSignInNote")}</p>
                 <Button

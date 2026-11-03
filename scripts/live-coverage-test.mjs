@@ -517,6 +517,33 @@ async function main() {
     });
     await expectStatus("GET /organiser/resales anonymous → 401", "GET", "/api/organiser/resales", 401);
 
+    /*
+     * Staff sell rather than buy.
+     *
+     * An ORGANISER holding seats on a rival's sold-out show, or an ADMIN
+     * who can see every order buying into an event they moderate, is the
+     * conflict refuseStaffPurchase exists to stop. It guards the ordinary
+     * checkout AND this one -- a rule enforced on one of two doors is not
+     * enforced. Untested until now, on either door.
+     */
+    await expectStatus("an ORGANISER cannot buy a resold seat", "POST", `/api/resale/${token}/buy`, 403, {
+      token: tokens.organiser,
+      body: { holderName: "Staff Test", email: "organisateur@eventick.ma", phone: "0612345678" },
+    });
+    await expectStatus("nor an ADMIN", "POST", `/api/resale/${token}/buy`, 403, {
+      token: tokens.admin,
+      body: { holderName: "Staff Test", email: "admin@eventick.ma", phone: "0612345678" },
+    });
+    await expectStatus("and the ordinary checkout refuses them too", "POST", "/api/orders/hold", 403, {
+      token: tokens.organiser,
+      body: { eventSlug: slug, lines: [{ tierId, qty: 1 }] },
+    });
+    record(
+      "the listing survived all three refusals",
+      (await call("GET", `/api/resale/${token}`, {})).data?.priceCents === 20000,
+      "still on sale",
+    );
+
     const offer = await expectStatus("GET /:token is public", "GET", `/api/resale/${token}`, 200);
     record(
       "the offer names the event and price",
