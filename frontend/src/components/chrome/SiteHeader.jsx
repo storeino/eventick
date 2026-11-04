@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Check, ChevronDown, LayoutDashboard, LogOut, MapPin, Menu, Moon, Search, Sun, Tag, Ticket, User, X } from "lucide-react";
 import { useAuth } from "../../AuthContext";
@@ -518,8 +519,18 @@ export function SiteHeader({ overlay = false }) {
         </div>
       </div>
 
-      {/* Mobile sheet */}
-      {menuOpen ? (
+      {/* Mobile sheet — portaled to document.body, not rendered inside
+          <header>. The header carries backdrop-blur unconditionally (see
+          below), and backdrop-filter establishes a containing block for
+          position: fixed descendants exactly like transform does — so a
+          fixed drawer nested inside it was never actually pinned to the
+          viewport, only to the header's own (much shorter) box. On a
+          phone the drawer rendered at roughly its own content height
+          instead of the full screen, and everything below that — Sign in,
+          the avatar — showed the hero underneath instead of the drawer's
+          own background. createPortal is the same fix Modal.jsx already
+          uses for the identical reason. */}
+      {menuOpen ? createPortal(
         <>
           <div className="fixed inset-0 z-[55] bg-stage/50 backdrop-blur-[2px] lg:hidden" onClick={() => setMenuOpen(false)} role="presentation" />
           <div
@@ -679,7 +690,7 @@ export function SiteHeader({ overlay = false }) {
             </div>
           </div>
         </>
-      ) : null}
+      , document.body) : null}
     </header>
   );
 }
