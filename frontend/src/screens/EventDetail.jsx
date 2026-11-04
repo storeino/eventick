@@ -384,7 +384,24 @@ export default function EventDetail() {
                       gone && "opacity-55",
                     )}
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-4">
+                    {/* flex-col, not flex-wrap. The left column carries
+                        min-w-0 so its own long text (the tier description)
+                        can truncate instead of forcing the row wide -- but
+                        min-w-0 also lets the FLEX ITEM shrink past what its
+                        content actually needs. The badges inside it
+                        (whitespace-nowrap, by design -- see Badge) do not
+                        truncate, so once the item's box was squeezed
+                        narrower than "Recommended experience", the badge
+                        kept its full width and overflowed its own shrunk
+                        container, visibly running into the price column
+                        beside it instead of ever triggering flex-wrap's
+                        row break -- wrap only fires when items do not fit
+                        at their BASE size, and the browser was never short
+                        of room at that measurement, only once min-w-0 let
+                        the left side go smaller than its content. Below
+                        sm: this is now an explicit single column, so the
+                        two sides never compete for the same row at all. */}
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap gap-1.5">
                           {tier.recommended ? <Badge tone="primary">{t("recommended")}</Badge> : null}
