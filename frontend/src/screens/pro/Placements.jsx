@@ -80,6 +80,17 @@ export default function Placements() {
   const { maySeeAllOrganisers, organisers } = useOrganisers();
   const [organiserId, setOrganiserId] = useState("");
   const [tiers, setTiers] = useState(null);
+  /*
+   * The shape of the room, which arranges the zones below.
+   *
+   * It lived on the event EDIT form, beside the venue's name — which put
+   * the three fields that make up the site plan on two different screens,
+   * and the odd one out behind an unlabelled pencil icon. The name is part
+   * of the listing; the SHAPE is how these zones are drawn, so it belongs
+   * with them.
+   */
+  const [venueKind, setVenueKind] = useState("STAGE");
+  const [savingKind, setSavingKind] = useState(false);
   const [editing, setEditing] = useState(null); // tier object, or "new"
   const [form, setForm] = useState(BLANK);
   const [busy, setBusy] = useState(false);
@@ -115,6 +126,30 @@ export default function Placements() {
     setTiers(null);
     load();
   }, [load]);
+
+  // Read off the events list already in state rather than re-fetching: the
+  // switcher above has the event, and it carries venueKind.
+  useEffect(() => {
+    const current = events.find((e) => e.slug === slug);
+    setVenueKind(current?.venueKind ?? "STAGE");
+  }, [events, slug]);
+
+  const saveVenueKind = async (next) => {
+    const previous = venueKind;
+    // Optimistic: the picker should not sit on the old value while the
+    // request is in flight. Rolled back if the server refuses.
+    setVenueKind(next);
+    setSavingKind(true);
+    try {
+      await api.patch(`/organiser/events/${slug}`, { venueKind: next });
+      toast.success(t.saved);
+    } catch (err) {
+      setVenueKind(previous);
+      toast.error(err.message);
+    } finally {
+      setSavingKind(false);
+    }
+  };
 
   const openNew = () => {
     setForm(BLANK);
@@ -271,8 +306,35 @@ export default function Placements() {
       ) : tiers && tiers.length === 0 ? (
         <EmptyState icon="🎪" title={t.noTiers} />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {(tiers ?? []).map((tier) => (
+        <>
+          {/* How the zones below are arranged on the public site plan. Above
+              them because it decides what they look like. */}
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-card border border-line/10 bg-card p-4">
+            <span className="min-w-0">
+              <span className="block text-sm font-bold">{t.venueKindLabel}</span>
+              <span className="block text-xs text-muted">{t.venueKindHint}</span>
+            </span>
+            <span className="ms-auto inline-block w-64">
+              <Dropdown
+                value={venueKind}
+                onChange={saveVenueKind}
+                label={t.venueKindLabel}
+                disabled={savingKind}
+                triggerClassName={triggerControlClass({ className: "h-11" })}
+                options={[
+                  { value: "STAGE", label: t.venueStage },
+                  { value: "HALL", label: t.venueHall },
+                  { value: "STADIUM", label: t.venueStadium },
+                  { value: "COURSE", label: t.venueCourse },
+                  { value: "EXPO", label: t.venueExpo },
+                  { value: "OPEN_AIR", label: t.venueOpenAir },
+                ]}
+              />
+            </span>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {(tiers ?? []).map((tier) => (
             <ZoneCard
               key={tier.id}
               tier={tier}
@@ -282,8 +344,9 @@ export default function Placements() {
               onEdit={() => openEdit(tier)}
               onRemove={() => remove(tier)}
             />
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       )}
 
       <Modal
