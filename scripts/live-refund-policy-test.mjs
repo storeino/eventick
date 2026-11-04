@@ -34,6 +34,9 @@ const API = process.env.API_URL ?? "http://localhost:4100";
 const ACCOUNTS = {
   organiser: { email: "organisateur@eventick.ma", password: "eventick-orga-2026" },
   customer: { email: "client@eventick.ma", password: "eventick-client-2026" },
+  // Reading what is still owed to buyers needs finance.refund, which the
+  // organiser deliberately does not hold.
+  admin: { email: "admin@eventick.ma", password: "eventick-admin-2026" },
 };
 
 let failures = 0;
@@ -148,6 +151,7 @@ async function makeEvent(name, organiserId, { priceCents = 30000, capacity = 10 
 async function main() {
   const organiser = await login(ACCOUNTS.organiser);
   const customer = await login(ACCOUNTS.customer);
+  const admin = await login(ACCOUNTS.admin);
   const orgaId = (await call("GET", "/api/auth/me", { token: organiser })).data.user.id;
 
   const cleanedBefore = await teardown();
@@ -303,6 +307,57 @@ async function main() {
     const voided = await call("POST", `/api/organiser/orders/${orderId}/cancel`, { token: organiser, body: {} });
     check("an order can still be voided without paying anyone", voided.status === 200, `${voided.status}`);
     check("and that really moves no money", (await refundedOn(orderId)) === 0, `${mad(await refundedOn(orderId))} MAD`);
+  }
+
+  // ── 4. A refund that was decided but not yet sent ────────────────
+  section("4. Money owed to a buyer is visible until it is sent");
+  {
+    /*
+     * CMI has no refund API. Cancelling an event voids the tickets, records
+     * the amount and emails the buyer -- a PERSON then reverses each
+     * transaction in the back office. Nothing listed what was outstanding,
+     * so a buyer owed money depended on somebody remembering.
+     */
+    const event = await makeEvent("owed", orgaId);
+    const orderId = await buy(event, 2);
+    await call("POST", `/api/organiser/events/${event.slug}/cancel`, {
+      token: organiser,
+      body: { reason: "Test remboursement" },
+    });
+
+    const pending = await call("GET", "/api/platform/refunds/pending", { token: admin });
+    const mine = (pending.data?.refunds ?? []).find((r) => r.orderId === orderId);
+    check("a refunded order appears as owed", Boolean(mine), mine ? `${mad(mine.amountCents)} MAD` : "absent");
+    check(
+      "and carries what the back office needs",
+      typeof mine?.buyerEmail === "string" && typeof mine?.amountCents === "number",
+      `${mine?.buyerEmail}`,
+    );
+
+    const noRef = await call("POST", `/api/platform/refunds/${orderId}/paid`, { token: admin, body: { reference: "x" } });
+    check("marking it paid without a real reference is refused", noRef.status === 400, `${noRef.status}`);
+
+    const marked = await call("POST", `/api/platform/refunds/${orderId}/paid`, {
+      token: admin,
+      body: { reference: "CMI-REVERSAL-TEST-001" },
+    });
+    check("marking it paid works", marked.status === 200, `${marked.status}`);
+
+    const after = await call("GET", "/api/platform/refunds/pending", { token: admin });
+    check(
+      "and it leaves the owed list",
+      !(after.data?.refunds ?? []).some((r) => r.orderId === orderId),
+      `${(after.data?.refunds ?? []).length} still owed`,
+    );
+
+    const twice = await call("POST", `/api/platform/refunds/${orderId}/paid`, {
+      token: admin,
+      body: { reference: "CMI-REVERSAL-TEST-002" },
+    });
+    check("marking it twice is refused", twice.status === 409, `${twice.status}`);
+
+    const asOrganiser = await call("GET", "/api/platform/refunds/pending", { token: organiser });
+    check("an organiser cannot read the owed list", asOrganiser.status === 403, `${asOrganiser.status}`);
   }
 
   // ── Cleanup ─────────────────────────────────────────────────────────────

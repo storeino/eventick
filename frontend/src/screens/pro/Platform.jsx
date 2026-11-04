@@ -4,7 +4,7 @@ import { ArrowDownRight, ArrowUpRight, CalendarDays, Landmark, Minus, ReceiptTex
 import { toast } from "sonner";
 import { api, money } from "../../api";
 import { useI18n } from "../../i18n";
-import { cn } from "../../utils";
+import { cn, eventText } from "../../utils";
 import { Badge, Button, Field, Input, Modal, Select } from "../../ui";
 import { EmptyState, PageHead, SectionTitle, StatCard, StatSkeletons } from "./ui";
 import { text } from "./copy";
@@ -40,6 +40,18 @@ export default function Platform() {
   const [sortBy, setSortBy] = useState("revenue");
   /** Organisers asking to move onto a different plan. */
   const [planRequests, setPlanRequests] = useState([]);
+  /*
+   * Refunds decided but not yet SENT.
+   *
+   * CMI has no refund API, so refundOrder voids the tickets, records the
+   * decision and emails the buyer — the money itself is moved by a person
+   * in the CMI back office. Until now nothing listed what was outstanding,
+   * so a buyer owed money depended on somebody remembering.
+   */
+  const [refunds, setRefunds] = useState({ refunds: [], totalCents: 0 });
+  /** The refund being marked paid, and the reference being typed. */
+  const [refundRow, setRefundRow] = useState(null);
+  const [refundRef, setRefundRef] = useState("");
 
   const loadSellers = useCallback(() => {
     api
@@ -52,6 +64,12 @@ export default function Platform() {
       .get("/platform/plan-requests")
       .then((data) => setPlanRequests(data.requests))
       .catch(() => setPlanRequests([]));
+  }, []);
+  const loadRefunds = useCallback(() => {
+    api
+      .get("/platform/refunds/pending")
+      .then(setRefunds)
+      .catch(() => setRefunds({ refunds: [], totalCents: 0 }));
   }, []);
   const loadPayouts = useCallback(() => {
     api
@@ -66,7 +84,8 @@ export default function Platform() {
     loadSellers();
     loadPayouts();
     loadPlanRequests();
-  }, [loadSellers, loadPayouts, loadPlanRequests]);
+    loadRefunds();
+  }, [loadSellers, loadPayouts, loadPlanRequests, loadRefunds]);
 
   /*
    * Decide one. Approving assigns the plan server-side, so the seller list is
@@ -120,6 +139,36 @@ export default function Platform() {
     revenue && revenue.prevWeekCents > 0
       ? Math.round(((revenue.thisWeekCents - revenue.prevWeekCents) / revenue.prevWeekCents) * 100)
       : null;
+
+  /*
+   * Record that the money actually left.
+   *
+   * The reference is required by the server and asked for rather than
+   * generated: it is the CMI or bank reference for the reversal, and the
+   * only way anyone can later check the books against reality. A generated
+   * one would look like proof and prove nothing.
+   *
+   * A Modal, not window.prompt — the native one cannot be translated,
+   * announces the origin ("localhost:3100 says"), and is suppressed
+   * outright by some browsers, which here would mean a refund silently
+   * marked paid or silently not.
+   */
+  const submitRefundPaid = async (event) => {
+    event.preventDefault();
+    const reference = refundRef.trim();
+    if (!refundRow || reference.length < 3) {
+      toast.error(t.plRefundRefTooShort);
+      return;
+    }
+    try {
+      await api.post(`/platform/refunds/${refundRow.orderId}/paid`, { reference });
+      toast.success(t.plRefundMarked);
+      setRefundRow(null);
+      loadRefunds();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
 
   return (
     <div>
@@ -254,6 +303,81 @@ export default function Platform() {
             ))}
           </div>
         </>
+      ) : null}
+
+      {/* Money owed to buyers, which nothing else on this console shows.
+          Above the payouts deliberately: an organiser being paid late is an
+          irritation, a buyer never refunded is a complaint. */}
+      {refunds.refunds.length > 0 ? (
+        <>
+          <SectionTitle>{t.plRefundsDue}</SectionTitle>
+          <p className="-mt-2 mb-3 text-sm text-muted">
+            {t.plRefundsDueSub} · <span className="font-bold text-ink">{money(refunds.totalCents)} MAD</span>
+          </p>
+          <div className="mb-4 grid gap-3">
+            {refunds.refunds.map((row) => (
+              <article
+                key={row.orderId}
+                className="flex flex-wrap items-center gap-4 rounded-card border border-danger/30 bg-danger-bg/30 p-4"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold">
+                    {money(row.amountCents)} MAD · {row.buyerName}
+                  </p>
+                  <p className="truncate text-sm text-muted">
+                    {row.buyerEmail} · {eventText(row, "eventTitle", locale)}
+                  </p>
+                  {/* The CMI transaction to reverse, which is what the person
+                      doing it in the back office actually needs. */}
+                  <p className="mt-1 font-mono text-xs text-muted">
+                    {row.gatewayRef ?? t.plRefundNoGatewayRef}
+                  </p>
+                </div>
+                <Button
+                  className="shrink-0"
+                  onClick={() => {
+                    setRefundRow(row);
+                    // Prefilled: the gateway reference is what the person in
+                    // the back office reverses, so it is usually the answer.
+                    setRefundRef(row.gatewayRef ?? "");
+                  }}
+                >
+                  {t.plRefundMarkPaid}
+                </Button>
+              </article>
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {refundRow ? (
+        <Modal
+          open
+          onClose={() => setRefundRow(null)}
+          title={t.plRefundMarkPaid}
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setRefundRow(null)}>
+                {t.cancelBtn}
+              </Button>
+              <Button type="submit" form="refund-paid-form" disabled={refundRef.trim().length < 3}>
+                {t.plRefundMarkPaid}
+              </Button>
+            </>
+          }
+        >
+          <form id="refund-paid-form" onSubmit={submitRefundPaid}>
+            <p className="mb-3 text-sm text-muted">
+              {money(refundRow.amountCents)} MAD · {refundRow.buyerName} · {refundRow.buyerEmail}
+            </p>
+            <Field label={t.plRefundRefPrompt}>
+              {(props) => (
+                <Input {...props} value={refundRef} onChange={(e) => setRefundRef(e.target.value)} autoFocus />
+              )}
+            </Field>
+          </form>
+        </Modal>
       ) : null}
 
       <SectionTitle>{t.plWhoSells}</SectionTitle>
