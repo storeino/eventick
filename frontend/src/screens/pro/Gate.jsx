@@ -283,7 +283,11 @@ export default function Gate() {
             in dark mode flipped this to a near-white card with dark text
             sitting inside an otherwise-dark dashboard, as seen in the Gate
             screenshot. */}
-        <Card className="bg-stage text-stage-fg">
+        {/* min-w-0: a grid item defaults to min-width: auto, so without
+            this each card is held to its own content's min-content width
+            instead of the grid track — overflowing the viewport on the
+            single-column mobile layout. */}
+        <Card className="min-w-0 bg-stage text-stage-fg">
           <div className="flex items-center gap-3">
             <span className="inline-flex size-10 items-center justify-center rounded-control bg-stage-fg/10 text-accent" aria-hidden>
               <QrCode className="size-5" />
@@ -358,7 +362,7 @@ export default function Gate() {
           ) : null}
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="font-display text-lg font-extrabold">{t.recent}</h2>
             {log.length > 0 ? (

@@ -707,8 +707,11 @@ function RunPayoutModal({ seller, t, onClose, onDone }) {
 }
 
 function Breakdown({ icon, title, rows }) {
+  // min-w-0: always rendered as a grid item (see the lg:grid-cols-3 callers
+  // above), and a grid item defaults to min-width: auto -- without this it
+  // is held to its own content's min-content width instead of the track.
   return (
-    <div className="rounded-card border border-line/10 bg-card p-4 shadow-card">
+    <div className="min-w-0 rounded-card border border-line/10 bg-card p-4 shadow-card">
       <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.06em] text-muted">
         {icon}
         {title}

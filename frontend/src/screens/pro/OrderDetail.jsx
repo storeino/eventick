@@ -74,8 +74,12 @@ export default function OrderDetail() {
         actions={<Badge tone={tone}>{order.status}</Badge>}
       />
 
+      {/* min-w-0 on both direct grid items: a grid item defaults to
+          min-width: auto, so without it each column is held to its own
+          content's min-content width instead of the grid track —
+          overflowing the viewport on the single-column mobile layout. */}
       <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
-        <div className="grid gap-4">
+        <div className="grid min-w-0 gap-4">
           <Card>
             <SectionTitle icon={<User className="size-4" />}>{t.buyerSection}</SectionTitle>
             <dl className="mt-3 grid gap-2.5 sm:grid-cols-2">
@@ -136,7 +140,7 @@ export default function OrderDetail() {
           </Card>
         </div>
 
-        <Card className="h-fit">
+        <Card className="h-fit min-w-0">
           <SectionTitle icon={<CreditCard className="size-4" />}>{t.paymentSection}</SectionTitle>
           <dl className="mt-3 grid gap-2">
             <Line label={t.subtotalLabel} value={`${money(order.subtotalCents)} MAD`} />

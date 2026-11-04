@@ -131,7 +131,12 @@ export default function Overview() {
       </ol>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.6fr_1fr] lg:items-stretch">
-        <Card className="flex flex-col">
+        {/* min-w-0: a grid item's default min-width is auto, not 0 -- so
+            without this, each Card is held to its content's min-content
+            width (here, the widest row in its own list) instead of the
+            grid track's width, and on a single-column mobile layout that
+            pushed both cards past the viewport. */}
+        <Card className="flex min-w-0 flex-col">
           <SectionTitle
             action={
               <Link to="/pro/events" className="text-sm font-semibold text-primary">
@@ -166,7 +171,7 @@ export default function Overview() {
           </ul>
         </Card>
 
-        <Card className="flex flex-col">
+        <Card className="flex min-w-0 flex-col">
           <SectionTitle
             action={
               <Link to="/pro/orders" className="text-sm font-semibold text-primary">
