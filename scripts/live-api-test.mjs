@@ -636,6 +636,19 @@ for (const id of created.orders) {
 }
 record("test orders removed", true, `${created.orders.length} order(s)`);
 
+/*
+ * The account registered at the top of this suite.
+ *
+ * Left behind for a long time, because DELETE /auth/users/:id did not exist
+ * when this was written. It does now, and every run without it added another
+ * row to the platform console's organiser list — the suite was quietly
+ * dirtying the data the screens it tests are meant to display.
+ */
+if (newUserId) {
+  const gone = await call("DELETE", `/api/auth/users/${newUserId}`, { token: tokens.admin });
+  record("the registered test account is removed", gone.status === 204 || gone.status === 200, `${gone.status}`);
+}
+
 // ───────────────────────────────────────────────────────────── summary ──
 const passed = results.filter((r) => r.pass).length;
 const failed = results.filter((r) => !r.pass);

@@ -526,6 +526,24 @@ async function main() {
       shape: (d) => d?.user?.role === "ORGANISER" && (d?.user?.permissions ?? []).includes("events.manage"),
     });
     await check("and the dashboard opens", "GET", "/organiser/events", 200, { token: applicantToken });
+
+    /*
+     * Remove the applicant, who is an ORGANISER by now.
+     *
+     * This block promotes someone every run and used to leave them there, so
+     * the platform console's "who is selling" list filled with 23 "Candidat
+     * FE" accounts that had never sold anything — on a screen whose whole
+     * purpose is showing who sells. The application row needs no separate
+     * delete: OrganiserApplication.user is onDelete: Cascade.
+     */
+    const applicantGone = applicant.data?.user?.id
+      ? await api("DELETE", `/auth/users/${applicant.data.user.id}`, { token: tokens.admin })
+      : { status: 0 };
+    record(
+      "the applicant account is removed, not left on the platform",
+      applicantGone.status === 204 || applicantGone.status === 200,
+      `${applicantGone.status}`,
+    );
   }
 
   // ── Billets.jsx / TicketDetail.jsx ────────────────────────────────────
@@ -1132,10 +1150,23 @@ async function main() {
     }
     await check("anonymous cannot read the permissions matrix", "GET", "/auth/permissions", 401);
 
-    // There is no DELETE /auth/users/:id, so the account this suite creates
-    // cannot be removed over the API. Named here rather than left as silent
-    // litter in the very directory this screen lists.
-    record("the test account is left behind (no delete endpoint)", made.status === 201, made.status === 201 ? email : "not created");
+    /*
+     * Remove the account this suite created.
+     *
+     * This used to record "left behind (no delete endpoint)" as a passing
+     * check, which stopped being true once DELETE /auth/users/:id landed.
+     * Meanwhile every run added one more ORGANISER to the platform console's
+     * "who is selling" list — 29 of them by the time anyone looked, all with
+     * zero events, in the very directory this group tests.
+     */
+    const removed = made.data?.user?.id
+      ? await api("DELETE", `/auth/users/${made.data.user.id}`, { token: tokens.admin })
+      : { status: 0 };
+    record(
+      "the test account is removed, not left on the platform",
+      removed.status === 204 || removed.status === 200,
+      `${removed.status}`,
+    );
   }
 
   // ── Gate.jsx + QrScanner.jsx + offlineGate.js ─────────────────────────

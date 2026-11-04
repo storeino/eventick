@@ -143,6 +143,15 @@ async function main() {
     customer: await login(ACCOUNTS.customer),
   };
   const slugs = [];
+  /*
+   * Accounts this run registers, removed in CLEANUP.
+   *
+   * The scope test below needs a SECOND organiser, and for a long time it
+   * simply left them on the platform: every run added another "Organiser
+   * Two" with zero events to the console's "who is selling" list, which is
+   * a page about who is actually selling.
+   */
+  const extraUsers = [];
 
   // ───────────────────────────────────────────── organiser tier CRUD ──
   setGroup("TIERS  /api/organiser/{events/:slug/tiers, tiers/:id}");
@@ -657,6 +666,7 @@ async function main() {
       body: { name: "Organiser Two", email: otherEmail, password: "cov-org2-2026" },
     });
     const otherToken = reg.data?.token;
+    if (reg.data?.user?.id) extraUsers.push(reg.data.user.id);
     await call("PATCH", `/api/auth/users/${reg.data?.user?.id}/role`, {
       token: tokens.admin,
       body: { role: "ORGANISER" },
@@ -1010,6 +1020,18 @@ async function main() {
     const left = await call("GET", "/api/events");
     const remaining = (left.data?.events ?? []).filter((e) => slugs.includes(e.slug));
     record("no test event is left in the catalog", remaining.length === 0, remaining.map((e) => e.slug).join(",") || "clean");
+
+    // After the events, because a user who still owns one cannot be deleted.
+    let users = 0;
+    for (const id of extraUsers) {
+      const res = await call("DELETE", `/api/auth/users/${id}`, { token: tokens.admin });
+      if (res.status === 204 || res.status === 200) users++;
+    }
+    record(
+      "the second organiser is removed, not left on the platform",
+      users === extraUsers.length,
+      `${users}/${extraUsers.length}`,
+    );
   }
 
   const failed = results.filter((r) => !r.pass);
