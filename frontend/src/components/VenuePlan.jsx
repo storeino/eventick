@@ -66,6 +66,35 @@ function heights(tiers, { min = 44, max = 132 } = {}) {
   return roots.map((r) => Math.round(min + ((r - lo) / (hi - lo)) * (max - min)));
 }
 
+/**
+ * How WIDE a zone should be drawn.
+ *
+ * Width used to come from the depth index alone -- each zone 15% wider than
+ * the one in front -- which reads as perspective on a festival where the
+ * zones really do widen going back. On a small room it inverted the truth:
+ * a 2-person "Entrée" was drawn WIDER than a 40-seat zone, because it
+ * happened to sit one step further back.
+ *
+ * Capacity now sets it, with the depth index kept as a small nudge so a
+ * plan whose zones hold similar numbers still reads front-to-back rather
+ * than as a stack of identical bars. Square-rooted for the same reason
+ * heights are: linear makes the small zone a sliver of unreadable text.
+ *
+ * `base` is the narrowest a zone may be drawn and `span` how much the
+ * largest adds, both as percentages of the plan's width.
+ */
+function widths(tiers, { base = 52, span = 46, nudge = 4 } = {}) {
+  const roots = tiers.map((tier) => Math.sqrt(Math.max(1, tier.capacity ?? 1)));
+  const lo = Math.min(...roots);
+  const hi = Math.max(...roots);
+  const flat = !Number.isFinite(lo) || hi - lo < 0.0001;
+  return tiers.map((_, i) => {
+    // All one size: fall back to pure depth, which is the only signal left.
+    const share = flat ? i / Math.max(1, tiers.length - 1) : (roots[i] - lo) / (hi - lo);
+    return Math.round(Math.min(100, base + share * span + i * nudge));
+  });
+}
+
 /** The palette, cycled. Index 0 is the dearest zone, so it reads as "best". */
 const FILLS = ["bg-primary text-primary-fg", "bg-accent text-accent-fg", "bg-brume-deep text-ink", "bg-info text-info-fg", "bg-secondary text-secondary-fg"];
 const DOTS = ["bg-primary", "bg-accent", "bg-brume-deep", "bg-info", "bg-secondary"];
@@ -124,6 +153,7 @@ function Zone({ tier, locale, t, className, style, fill, onPick, picked }) {
 function StagePlan({ tiers, locale, t, onPick, picked }) {
   const zones = ordered(tiers);
   const tall = heights(zones);
+  const wide = widths(zones);
   return (
     <>
       <div
@@ -133,9 +163,9 @@ function StagePlan({ tiers, locale, t, onPick, picked }) {
         {t("stage")}
       </div>
       {zones.map((tier, i) => {
-        // Width still reads as depth -- each zone wider than the one in front
-        // -- but HEIGHT is now how many people it holds.
-        const width = Math.min(100, 62 + i * (zones.length > 3 ? 10 : 15));
+        // Both axes are capacity now. The inset keeps the trapezoid shape
+        // that makes the block read as a zone rather than a bar.
+        const width = wide[i];
         const inset = Math.max(0, 8 - i * 3);
         return (
           <Zone
@@ -293,6 +323,7 @@ function CoursePlan({ tiers, locale, t, onPick, picked }) {
   const pos = (tier) => (typeof tier.planOrder === "number" ? tier.planOrder : Number.POSITIVE_INFINITY);
   const zones = [...tiers].sort((a, b) => pos(a) - pos(b) || a.priceCents - b.priceCents);
   const tall = heights(zones, { min: 40, max: 84 });
+  const wide = widths(zones, { base: 48, span: 44, nudge: 6 });
   return (
     <div className="py-2">
       <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wide text-muted">
@@ -312,7 +343,7 @@ function CoursePlan({ tiers, locale, t, onPick, picked }) {
             t={t} onPick={onPick} picked={picked === tier.id}
             fill={FILLS[i % FILLS.length]}
             className="rounded-full"
-            style={{ height: `${tall[i]}px`, width: `${Math.min(100, 55 + i * 15)}%` }}
+            style={{ height: `${tall[i]}px`, width: `${wide[i]}%` }}
           />
         ))}
       </div>
@@ -350,6 +381,7 @@ function ExpoPlan({ tiers, locale, t, onPick, picked }) {
 function OpenAirPlan({ tiers, locale, t, onPick, picked }) {
   const zones = ordered(tiers);
   const tall = heights(zones, { min: 48, max: 110 });
+  const wide = widths(zones, { base: 56, span: 42, nudge: 3 });
   return (
     <div className="grid gap-2">
       {zones.map((tier, i) => (
@@ -360,7 +392,7 @@ function OpenAirPlan({ tiers, locale, t, onPick, picked }) {
           t={t} onPick={onPick} picked={picked === tier.id}
           fill={FILLS[i % FILLS.length]}
           className="mx-auto rounded-[40%_60%_55%_45%/55%_45%_60%_40%]"
-          style={{ height: `${tall[i]}px`, width: `${Math.min(100, 70 + i * 12)}%` }}
+          style={{ height: `${tall[i]}px`, width: `${wide[i]}%` }}
         />
       ))}
     </div>
