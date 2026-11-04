@@ -42,6 +42,10 @@ export function Dropdown({
   panelClassName,
   align = "start",
   width = "w-full",
+  // Opt-in, forwarded straight to Popover -- see its own comment on
+  // mobileSheet for why this exists. Defaults to false, so every
+  // existing Dropdown caller is unaffected unless it asks for this.
+  mobileSheet = false,
 }) {
   const current = options.find((option) => option.value === value);
 
@@ -50,6 +54,7 @@ export function Dropdown({
       label={label ?? placeholder}
       labelledBy={labelledBy}
       align={align}
+      mobileSheet={mobileSheet}
       width={width}
       disabled={disabled}
       // Popover's own <button> has no width class, so it shrinks to content

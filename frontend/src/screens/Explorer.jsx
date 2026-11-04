@@ -262,6 +262,7 @@ export default function Explorer() {
                     value={search.tri}
                     onChange={(tri) => setSearch({ tri, page: search.page })}
                     width="w-56"
+                    mobileSheet
                     label={t("sort")}
                     triggerClassName="h-11 rounded-control border border-line/15 bg-card px-3.5 text-sm font-semibold"
                     options={[
