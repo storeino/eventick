@@ -77,15 +77,31 @@ export function Popover({
         <div
           id={id}
           className={cn(
-            // max-w here is a SAFETY CEILING, not a substitute for `width`.
-            // The header search popover asks for w-96 (384px), wider than
-            // a 360px phone outright -- end-0/start-0 only pick which edge
-            // it grows from, so no alignment choice keeps a panel wider
-            // than the viewport on screen. calc(100vw-2rem) leaves a 1rem
-            // gutter each side and only binds once `width` would actually
-            // overflow, so every existing w-56/w-64 caller is unaffected.
+            // Capping width alone was NOT enough -- reported with a second
+            // screenshot. The search trigger sits near the header's right
+            // edge on a phone (hamburger, search icon, create button and
+            // avatar all crowd that side); align="end" anchors the panel's
+            // RIGHT edge there and grows it LEFTWARD, so even a panel
+            // correctly capped under 300px still started from a point near
+            // the viewport's own right edge and ran off the LEFT side
+            // entirely -- a narrower box in the wrong place is still off
+            // screen. end-0/start-0 describe which edge to grow from, not
+            // where on the viewport that edge actually sits once the
+            // trigger itself is close to one side.
+            //
+            // Fixed with inset-inline-0 + mx-auto below sm:, the same
+            // centring technique already used by TicketPass's QR perforation
+            // and the pro dashboard's InfoTip (see both) -- NOT start-1/2 +
+            // -translate-x-1/2, which was tried here first and reverted: a
+            // negative translate-x is a PHYSICAL transform, so it does not
+            // mirror under RTL and would pull the panel further off-centre
+            // in Arabic rather than centring it. inset-inline-0 is a logical
+            // property, so this has no horizontal transform to mirror at
+            // all. Above sm: back to the original edge-anchored behaviour,
+            // where every existing caller already has the room for it.
             "absolute top-[calc(100%+0.5rem)] z-50 max-w-[calc(100vw-2rem)] overflow-hidden rounded-panel border border-line/10 bg-card text-ink shadow-modal",
-            align === "end" ? "end-0" : "start-0",
+            "inset-inline-0 mx-auto sm:inset-inline-auto sm:mx-0",
+            align === "end" ? "sm:end-0" : "sm:start-0",
             width,
             panelClassName,
           )}
