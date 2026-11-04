@@ -523,6 +523,23 @@ async function main() {
       emptied.some((x) => x.id !== cheap.id && x.remaining > 0),
       "yes",
     );
+
+    /*
+     * Blocks are sized by capacity, so the figure has to be on the public
+     * payload for every tier — including one with none left. A zone that
+     * sold out must still be DRAWN at its real size, greyed; dropping its
+     * capacity would shrink it as it sold, which is not how a venue works.
+     */
+    record(
+      "every zone carries the capacity the drawing is sized from",
+      (emptied ?? []).every((x) => typeof x.capacity === "number" && x.capacity > 0),
+      `${emptied.length} tier(s)`,
+    );
+    record(
+      "a sold-out zone keeps its capacity",
+      gone?.capacity > 0 && gone?.remaining === 0,
+      `cap=${gone?.capacity} left=${gone?.remaining}`,
+    );
   }
   // ─────────────────────────────────────────────────────────── resale ──
   setGroup("RESALE  /api/resale/*");

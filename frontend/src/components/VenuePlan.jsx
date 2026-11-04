@@ -39,6 +39,33 @@ function ordered(tiers) {
   return [...tiers].sort((a, b) => pos(a) - pos(b) || b.priceCents - a.priceCents);
 }
 
+/**
+ * How tall a zone should be drawn, from how many people it holds.
+ *
+ * Every zone used to be sized by its POSITION in the list, so on derby-casa
+ * the 400-seat Loge latérale was drawn the same size as the 18 000-seat
+ * Virage populaire — forty-five times the people, identical block. A plan
+ * that gets the order right and the proportion wrong is misleading in a new
+ * way rather than fixed.
+ *
+ * Square-rooted, not linear. Linear would make that same Virage 45× the
+ * Loge, which is honest arithmetic and an unusable drawing: the small zone
+ * collapses to a line of unreadable text. A square root keeps the big zone
+ * visibly bigger while leaving the small one a block someone can click and
+ * read — the same compression a cartogram uses, and for the same reason.
+ *
+ * Clamped at both ends so one enormous zone cannot squeeze the rest to
+ * nothing, and a tiny one still has room for its name.
+ */
+function heights(tiers, { min = 44, max = 132 } = {}) {
+  const roots = tiers.map((tier) => Math.sqrt(Math.max(1, tier.capacity ?? 1)));
+  const lo = Math.min(...roots);
+  const hi = Math.max(...roots);
+  // All the same size: no information in the ratio, so don't invent any.
+  if (!Number.isFinite(lo) || hi - lo < 0.0001) return tiers.map(() => (min + max) / 2);
+  return roots.map((r) => Math.round(min + ((r - lo) / (hi - lo)) * (max - min)));
+}
+
 /** The palette, cycled. Index 0 is the dearest zone, so it reads as "best". */
 const FILLS = ["bg-primary text-primary-fg", "bg-accent text-accent-fg", "bg-brume-deep text-ink", "bg-info text-info-fg", "bg-secondary text-secondary-fg"];
 const DOTS = ["bg-primary", "bg-accent", "bg-brume-deep", "bg-info", "bg-secondary"];
@@ -96,6 +123,7 @@ function Zone({ tier, locale, t, className, style, fill, onPick, picked }) {
  */
 function StagePlan({ tiers, locale, t, onPick, picked }) {
   const zones = ordered(tiers);
+  const tall = heights(zones);
   return (
     <>
       <div
@@ -105,8 +133,8 @@ function StagePlan({ tiers, locale, t, onPick, picked }) {
         {t("stage")}
       </div>
       {zones.map((tier, i) => {
-        // Each zone is wider than the one in front of it, which is what makes
-        // the drawing read as depth rather than a stack of bars.
+        // Width still reads as depth -- each zone wider than the one in front
+        // -- but HEIGHT is now how many people it holds.
         const width = Math.min(100, 62 + i * (zones.length > 3 ? 10 : 15));
         const inset = Math.max(0, 8 - i * 3);
         return (
@@ -120,7 +148,7 @@ function StagePlan({ tiers, locale, t, onPick, picked }) {
             style={{
               width: `${width}%`,
               clipPath: `polygon(${inset}% 0, ${100 - inset}% 0, 100% 100%, 0 100%)`,
-              height: `${Math.max(44, 44 + i * 10)}px`,
+              height: `${tall[i]}px`,
             }}
           />
         );
@@ -135,6 +163,9 @@ function StagePlan({ tiers, locale, t, onPick, picked }) {
  */
 function HallPlan({ tiers, locale, t, onPick, picked }) {
   const zones = ordered(tiers);
+  // A hall's rows are its capacity: a 60-seat box should not look like the
+  // 900-seat stalls beneath it.
+  const tall = heights(zones, { min: 40, max: 110 });
   return (
     <>
       <div className="mx-auto flex h-9 w-[70%] items-center justify-center rounded-t-card bg-ink text-xs font-bold uppercase tracking-wide text-paper">
@@ -149,7 +180,7 @@ function HallPlan({ tiers, locale, t, onPick, picked }) {
             t={t} onPick={onPick} picked={picked === tier.id}
             fill={FILLS[i % FILLS.length]}
             className="rounded-control"
-            style={{ height: `${Math.max(44, 40 + i * 8)}px` }}
+            style={{ height: `${tall[i]}px` }}
           />
         ))}
       </div>
@@ -163,25 +194,86 @@ function HallPlan({ tiers, locale, t, onPick, picked }) {
  */
 function StadiumPlan({ tiers, locale, t, onPick, picked }) {
   const zones = ordered(tiers);
-  const [first, ...rest] = zones;
+  /*
+   * The stands RING the pitch, so the four sides are taken in order and the
+   * pitch sits in the middle.
+   *
+   * The previous version gave each side `w-[22%]` against a `flex-1` pitch,
+   * so with three zones the two sides ate the width and the pitch was left a
+   * narrow sliver with its own label clipped — a stadium drawn as two blocks
+   * either side of a corridor. The pitch is now a fixed share of the middle
+   * row and the sides split what is left, which keeps it dominant however
+   * many zones there are.
+   *
+   * Depth is capacity: an 18 000-seat end is drawn thicker than a 400-seat
+   * box, which is the whole point of sizing by how many people fit.
+   */
+  const [near, side1, side2, ...far] = zones;
+  const deep = heights(zones, { min: 34, max: 76 });
+  const depthOf = (tier) => deep[zones.indexOf(tier)];
+
   return (
     <div className="grid gap-1.5">
-      {first ? (
-        <Zone tier={first} locale={locale} t={t} onPick={onPick} picked={picked === first.id} fill={FILLS[0]} className="rounded-t-card" style={{ height: "44px" }} />
+      {near ? (
+        <Zone
+          tier={near}
+          locale={locale}
+          t={t}
+          onPick={onPick}
+          picked={picked === near.id}
+          fill={FILLS[0]}
+          className="rounded-t-card"
+          style={{ height: `${depthOf(near)}px` }}
+        />
       ) : null}
-      <div className="flex items-stretch gap-1.5">
-        {rest[0] ? (
-          <Zone tier={rest[0]} locale={locale} t={t} onPick={onPick} picked={picked === rest[0].id} fill={FILLS[1]} className="w-[22%] rounded-s-card [writing-mode:vertical-rl] rotate-180" />
+
+      <div className="flex items-stretch gap-1.5" style={{ minHeight: "132px" }}>
+        {side1 ? (
+          <Zone
+            tier={side1}
+            locale={locale}
+            t={t}
+            onPick={onPick}
+            picked={picked === side1.id}
+            fill={FILLS[1]}
+            className="rounded-s-card [writing-mode:vertical-rl] rotate-180"
+            style={{ width: `${depthOf(side1)}px` }}
+          />
         ) : null}
-        <div className="flex flex-1 items-center justify-center rounded-card border-2 border-dashed border-line/30 bg-paper py-10 text-xs font-bold uppercase tracking-wide text-muted">
+
+        {/* The pitch keeps the middle. Written across rather than down so
+            the word fits however narrow the stands get. */}
+        <div className="flex flex-1 items-center justify-center rounded-card border-2 border-dashed border-line/30 bg-paper text-xs font-bold uppercase tracking-wide text-muted">
           {t("venuePitch")}
         </div>
-        {rest[1] ? (
-          <Zone tier={rest[1]} locale={locale} t={t} onPick={onPick} picked={picked === rest[1].id} fill={FILLS[2]} className="w-[22%] rounded-e-card [writing-mode:vertical-rl]" />
+
+        {side2 ? (
+          <Zone
+            tier={side2}
+            locale={locale}
+            t={t}
+            onPick={onPick}
+            picked={picked === side2.id}
+            fill={FILLS[2]}
+            className="rounded-e-card [writing-mode:vertical-rl]"
+            style={{ width: `${depthOf(side2)}px` }}
+          />
         ) : null}
       </div>
-      {rest.slice(2).map((tier, i) => (
-        <Zone key={tier.id} tier={tier} locale={locale} t={t} onPick={onPick} picked={picked === tier.id} fill={FILLS[(i + 3) % FILLS.length]} className="rounded-b-card" style={{ height: "44px" }} />
+
+      {/* A fourth zone closes the ring; a fifth onwards stacks behind it. */}
+      {far.map((tier, i) => (
+        <Zone
+          key={tier.id}
+          tier={tier}
+          locale={locale}
+          t={t}
+          onPick={onPick}
+          picked={picked === tier.id}
+          fill={FILLS[(i + 3) % FILLS.length]}
+          className={cn(i === far.length - 1 && "rounded-b-card")}
+          style={{ height: `${depthOf(tier)}px` }}
+        />
       ))}
     </div>
   );
@@ -200,6 +292,7 @@ function CoursePlan({ tiers, locale, t, onPick, picked }) {
    */
   const pos = (tier) => (typeof tier.planOrder === "number" ? tier.planOrder : Number.POSITIVE_INFINITY);
   const zones = [...tiers].sort((a, b) => pos(a) - pos(b) || a.priceCents - b.priceCents);
+  const tall = heights(zones, { min: 40, max: 84 });
   return (
     <div className="py-2">
       <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wide text-muted">
@@ -219,7 +312,7 @@ function CoursePlan({ tiers, locale, t, onPick, picked }) {
             t={t} onPick={onPick} picked={picked === tier.id}
             fill={FILLS[i % FILLS.length]}
             className="rounded-full"
-            style={{ height: "44px", width: `${Math.min(100, 55 + i * 15)}%` }}
+            style={{ height: `${tall[i]}px`, width: `${Math.min(100, 55 + i * 15)}%` }}
           />
         ))}
       </div>
@@ -230,6 +323,7 @@ function CoursePlan({ tiers, locale, t, onPick, picked }) {
 /** EXPO — halls walked through, so equal blocks on a floor rather than a bowl. */
 function ExpoPlan({ tiers, locale, t, onPick, picked }) {
   const zones = ordered(tiers);
+  const tall = heights(zones, { min: 52, max: 104 });
   return (
     <>
       <div className="mx-auto mb-3 flex h-8 w-[40%] items-center justify-center rounded-card bg-ink text-[11px] font-bold uppercase tracking-wide text-paper">
@@ -244,7 +338,7 @@ function ExpoPlan({ tiers, locale, t, onPick, picked }) {
             t={t} onPick={onPick} picked={picked === tier.id}
             fill={FILLS[i % FILLS.length]}
             className="rounded-control"
-            style={{ height: "64px" }}
+            style={{ height: `${tall[i]}px` }}
           />
         ))}
       </div>
@@ -255,6 +349,7 @@ function ExpoPlan({ tiers, locale, t, onPick, picked }) {
 /** OPEN_AIR — open ground, no fixed front: soft blobs rather than a bowl. */
 function OpenAirPlan({ tiers, locale, t, onPick, picked }) {
   const zones = ordered(tiers);
+  const tall = heights(zones, { min: 48, max: 110 });
   return (
     <div className="grid gap-2">
       {zones.map((tier, i) => (
@@ -265,7 +360,7 @@ function OpenAirPlan({ tiers, locale, t, onPick, picked }) {
           t={t} onPick={onPick} picked={picked === tier.id}
           fill={FILLS[i % FILLS.length]}
           className="mx-auto rounded-[40%_60%_55%_45%/55%_45%_60%_40%]"
-          style={{ height: "60px", width: `${Math.min(100, 70 + i * 12)}%` }}
+          style={{ height: `${tall[i]}px`, width: `${Math.min(100, 70 + i * 12)}%` }}
         />
       ))}
     </div>
@@ -312,6 +407,23 @@ export function VenuePlan({ event, onPick, picked }) {
       {tiers.length > 0 ? (
         <div className="mx-auto mt-5 max-w-lg rounded-card bg-paper p-5">
           <Plan tiers={tiers} locale={locale} t={t} onPick={onPick} picked={picked} />
+
+          {/*
+            The rest of the ground.
+
+            Mawazine's VIP wedge holds 4 000 of 62 000, so a plan showing
+            only the drawn zones showed 6% of the audience and boxed the
+            other 58 000 away in a list underneath. These tickets are not
+            somewhere else — they are the whole site, which is exactly what
+            a band under the named zones says. Still not a zone: no colour
+            of its own, no click, dashed like the pitch, because it is
+            ground rather than a seat you choose.
+          */}
+          {other.length > 0 ? (
+            <div className="mt-2 flex min-h-11 items-center justify-center rounded-card border-2 border-dashed border-line/30 px-3 text-center text-xs font-bold uppercase tracking-wide text-muted">
+              {t("planGeneralGround")} · {groupNumber(other.reduce((sum, tier) => sum + tier.capacity, 0))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
