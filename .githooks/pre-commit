@@ -1,0 +1,6 @@
+#!/bin/sh
+# Refuse a commit that carries a credential. See scripts/check-secrets.mjs.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+exec node scripts/check-secrets.mjs
