@@ -5,6 +5,7 @@ import { api, money } from "../../api";
 import { useI18n } from "../../i18n";
 import { useConfirm } from "./ConfirmContext";
 import { EventSwitcher } from "./EventSwitcher";
+import { VenuePlan } from "../../components/VenuePlan";
 import { Badge, Btn, EmptyState, IconBtn, Modal, PageHead } from "./ui";
 import { text } from "./copy";
 import { CheckOption, Dropdown, Field, Input, SalesWindow, salesWindowAt, splitSalesWindow, triggerControlClass } from "../../ui";
@@ -307,6 +308,26 @@ export default function Placements() {
         <EmptyState icon="🎪" title={t.noTiers} />
       ) : (
         <>
+          {/*
+            The plan as the buyer sees it, drawn from these zones.
+
+            The three fields that shape it — venue type, "this is a place",
+            position — were all settable and none of them showed their
+            effect, so an organiser was choosing between six arrangements
+            from their names alone and filling in a position number with no
+            way to tell whether it helped. The same component the public
+            page uses, with the same data, so what is previewed here IS what
+            ships rather than an approximation of it.
+
+            Not clickable: on the event page a zone scrolls to its row in
+            the ticket list, which does not exist here.
+          */}
+          <div className="mb-4 rounded-card border border-line/10 bg-card p-4">
+            <p className="text-sm font-bold">{t.planPreview}</p>
+            <p className="text-xs text-muted">{t.planPreviewHint}</p>
+            <VenuePlan event={{ venueKind, tiers: tiers ?? [] }} />
+          </div>
+
           {/* How the zones below are arranged on the public site plan. Above
               them because it decides what they look like. */}
           <div className="mb-4 flex flex-wrap items-center gap-3 rounded-card border border-line/10 bg-card p-4">
@@ -533,6 +554,25 @@ function ZoneCard({ tier, locale, t, nowIso, onEdit, onRemove }) {
           </Badge>
         ) : (
           <Badge tone="neutral">{t.freeSeating}</Badge>
+        )}
+      </div>
+
+      {/*
+        Where this zone sits on the public site plan.
+        The card showed price, capacity and seating but nothing about the
+        plan, so checking the order of three zones meant opening and closing
+        three dialogs. Both states are worth saying: a zone that is NOT drawn
+        is the surprising one, and a position of "auto" explains why two
+        zones came out in price order.
+      */}
+      <div className="flex flex-wrap items-center gap-2">
+        {tier.spatial === false ? (
+          <Badge tone="neutral">{t.tierNotOnPlan}</Badge>
+        ) : (
+          <Badge tone="neutral">
+            {t.tierPlanOrder} ·{" "}
+            {typeof tier.planOrder === "number" ? tier.planOrder : t.tierPlanOrderAuto}
+          </Badge>
         )}
       </div>
 
