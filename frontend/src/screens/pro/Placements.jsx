@@ -92,6 +92,13 @@ export default function Placements() {
    * with them.
    */
   const [venueKind, setVenueKind] = useState("STAGE");
+  /*
+   * Every zone is a pass or a badge, so the plan is correctly empty and the
+   * venue type provably changes nothing. Worth naming once: the preview
+   * explains it and the picker is disabled by it, and those two must not be
+   * able to disagree.
+   */
+  const noZonesDrawn = (tiers ?? []).length > 0 && (tiers ?? []).every((tier) => tier.spatial === false);
   const [savingKind, setSavingKind] = useState(false);
   const [editing, setEditing] = useState(null); // tier object, or "new"
   const [form, setForm] = useState(BLANK);
@@ -326,6 +333,24 @@ export default function Placements() {
           <div className="mb-4 rounded-card border border-line/10 bg-card p-4">
             <p className="text-sm font-bold">{t.planPreview}</p>
             <p className="text-xs text-muted">{t.planPreviewHint}</p>
+
+            {/*
+              Why there is no drawing, when there is no drawing.
+
+              With every tier marked "not a place" the plan is correctly
+              empty — passes admit you to the same ground, so there is
+              nothing to draw. On the buyer's page that silence is right.
+              Here it is a plan-shaped box with no plan and no reason given,
+              which reads as broken rather than as an answer. The venue type
+              picker below is also doing nothing in that state, and nothing
+              said so.
+            */}
+            {noZonesDrawn ? (
+              <p className="mt-3 rounded-control border border-line/15 bg-paper p-3 text-xs leading-relaxed text-muted">
+                {t.planPreviewNoZones}
+              </p>
+            ) : null}
+
             <VenuePlan event={{ venueKind, tiers: tiers ?? [] }} />
           </div>
 
@@ -341,7 +366,7 @@ export default function Placements() {
                 value={venueKind}
                 onChange={saveVenueKind}
                 label={t.venueKindLabel}
-                disabled={savingKind}
+                disabled={savingKind || noZonesDrawn}
                 triggerClassName={triggerControlClass({ className: "h-11" })}
                 options={[
                   { value: "STAGE", label: t.venueStage },
