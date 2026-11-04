@@ -6,6 +6,7 @@ import { useI18n } from "../../i18n";
 import { useConfirm } from "./ConfirmContext";
 import { EventSwitcher } from "./EventSwitcher";
 import { VenuePlan } from "../../components/VenuePlan";
+import { slotLabel, slotsFor } from "../../venueSlots";
 import { Badge, Btn, EmptyState, IconBtn, Modal, PageHead } from "./ui";
 import { text } from "./copy";
 import { CheckOption, Dropdown, Field, Input, SalesWindow, salesWindowAt, splitSalesWindow, triggerControlClass } from "../../ui";
@@ -362,6 +363,7 @@ export default function Placements() {
               locale={locale}
               t={t}
               nowIso={nowIso}
+              venueKind={venueKind}
               onEdit={() => openEdit(tier)}
               onRemove={() => remove(tier)}
             />
@@ -457,18 +459,33 @@ export default function Placements() {
             <p className="px-2 text-xs text-muted">{t.tierSpatialHint}</p>
           </div>
           {form.spatial ? (
+            /*
+             * Named places, not an index.
+             *
+             * The value stored is still the integer VenuePlan sorts by —
+             * this only stops an organiser having to know that 1 means the
+             * LEFT side in a stadium and the second row back on a stage.
+             * The options come from the event's own venue kind, so the list
+             * describes the drawing they are actually looking at.
+             */
             <Field label={t.tierPlanOrder} hint={t.tierPlanOrderHint}>
               {({ id, describedBy, invalid }) => (
-                <Input
+                <Dropdown
                   id={id}
                   describedBy={describedBy}
-                  invalid={invalid}
-                  type="number"
-                  min={0}
-                  max={99}
-                  placeholder={t.tierPlanOrderAuto}
                   value={form.planOrder}
-                  onChange={(e) => field("planOrder", e.target.value)}
+                  onChange={(next) => field("planOrder", next)}
+                  label={t.tierPlanOrder}
+                  triggerClassName={triggerControlClass({ invalid })}
+                  options={[
+                    // Empty is a real answer: "I have no opinion, order it
+                    // by price" is how most zones should stay.
+                    { value: "", label: t.tierPlanOrderAuto },
+                    ...slotsFor(venueKind).map((slot) => ({
+                      value: String(slot.value),
+                      label: t[slot.key],
+                    })),
+                  ]}
                 />
               )}
             </Field>
@@ -513,7 +530,7 @@ export default function Placements() {
 
 /** One zone. Price and the jauge bar get a full row each rather than being
  * squeezed into fixed-width table cells, so the bar actually reads as a bar. */
-function ZoneCard({ tier, locale, t, nowIso, onEdit, onRemove }) {
+function ZoneCard({ tier, locale, t, nowIso, venueKind, onEdit, onRemove }) {
   const sale = saleState(tier, nowIso);
   const left = tier.remaining;
   const total = tier.capacity;
@@ -570,8 +587,11 @@ function ZoneCard({ tier, locale, t, nowIso, onEdit, onRemove }) {
           <Badge tone="neutral">{t.tierNotOnPlan}</Badge>
         ) : (
           <Badge tone="neutral">
-            {t.tierPlanOrder} ·{" "}
-            {typeof tier.planOrder === "number" ? tier.planOrder : t.tierPlanOrderAuto}
+            {/* Named where the venue has a name for it; a position past the
+                named slots falls back to the number, because "5" is at
+                least honest about stacking behind the rest. */}
+            {slotLabel(venueKind, tier.planOrder, t) ??
+              (typeof tier.planOrder === "number" ? `#${tier.planOrder}` : t.tierPlanOrderAuto)}
           </Badge>
         )}
       </div>
