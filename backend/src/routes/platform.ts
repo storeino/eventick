@@ -7,6 +7,9 @@ import { summariseRevenue } from "../domain/commission.js";
 import { cancelPayout, markPayoutPaid, organiserEarnings, runPayout } from "../lib/payout.js";
 import { listAudit } from "../lib/audit.js";
 import { AUDIT_ACTIONS, recordAudit } from "../lib/audit.js";
+import { sendEmail } from "../lib/email.js";
+import { refundSentHtml, refundSentSubject } from "../lib/email-templates.js";
+import { logger } from "../lib/logger.js";
 
 /**
  * The platform console — what someone running the marketplace needs, as
@@ -729,7 +732,14 @@ platformRouter.post(
 
     const order = await prisma.order.findUnique({
       where: { id },
-      select: { id: true, refundedCents: true, refundPaidAt: true },
+      select: {
+        id: true,
+        refundedCents: true,
+        refundPaidAt: true,
+        holderName: true,
+        email: true,
+        event: { select: { titleFr: true } },
+      },
     });
     if (!order) throw new HttpError(404, "Order not found");
     if (order.refundedCents <= 0) throw new HttpError(409, "This order has no refund to pay");
@@ -750,6 +760,32 @@ platformRouter.post(
       subjectLabel: `${(updated.refundedCents / 100).toFixed(2)} MAD`,
       details: { amountCents: updated.refundedCents, reference: body.reference },
     });
+
+    /*
+     * The email that is actually true: the money has now been sent.
+     * refundOrder() only promised it was coming — see the note on
+     * refundSubject/refundSentSubject. Fire-and-forget, because the payout
+     * has already happened and a failed email must not fail the request.
+     */
+    void sendEmail({
+      to: order.email,
+      subject: refundSentSubject({
+        locale: "fr",
+        holderName: order.holderName,
+        eventTitle: order.event.titleFr,
+        amountCents: updated.refundedCents,
+        orderId: order.id,
+        reference: body.reference,
+      }),
+      html: refundSentHtml({
+        locale: "fr",
+        holderName: order.holderName,
+        eventTitle: order.event.titleFr,
+        amountCents: updated.refundedCents,
+        orderId: order.id,
+        reference: body.reference,
+      }),
+    }).catch((err) => logger.warn({ err, orderId: order.id }, "refund-sent email failed"));
 
     res.json({ paid: true, paidAt: updated.refundPaidAt?.toISOString() ?? null });
   }),

@@ -232,7 +232,7 @@ function BilletsInner() {
                 </tr>
               </thead>
               <tbody>
-                {past.map(({ ticket }) => (
+                {past.map(({ ticket, order }) => (
                   <tr key={ticket.id} className="border-t border-line/10">
                     <td className="px-4 py-3">
                       <p className="font-semibold">{eventText(ticket.event, "title", locale)}</p>
@@ -243,6 +243,20 @@ function BilletsInner() {
                     <td className="px-4 py-3">{money(ticket.priceCents)} MAD</td>
                     <td className="px-4 py-3">
                       {ticket.status === "TRANSFERRED" ? t("transferred") : ticket.status === "CANCELLED" ? t("cancelled") : t("used")}
+                      {/* What happened to the money, for a seat that was
+                          resold or refunded. refundedAt is only the decision:
+                          CMI has no refund API, so the transfer is made by
+                          hand afterwards and refundPaidAt is when it actually
+                          went out. Saying "remboursé" at the decision is what
+                          sent sellers to their bank to find nothing there. */}
+                      {order.refundedCents > 0 ? (
+                        <p className={`mt-1 text-xs ${order.refundPaidAt ? "text-success" : "text-muted"}`}>
+                          {(order.refundPaidAt ? t("payoutSent") : t("payoutPending")).replace(
+                            "{n}",
+                            money(order.refundedCents),
+                          )}
+                        </p>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

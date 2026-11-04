@@ -128,18 +128,76 @@ export interface RefundInput {
   orderId: string;
 }
 
+/*
+ * Two refund emails, not one, because there are two different moments and
+ * only the second one is true.
+ *
+ * CMI has no refund API: refundOrder() records the decision and voids the
+ * tickets, but the money is reversed by hand in the CMI back office,
+ * possibly days later and possibly not at all if nobody actions the
+ * pending-refunds queue. The single email this replaces fired at the
+ * decision and said "recrédité sur votre carte" — telling someone their
+ * money had arrived when nothing had moved. A seller who then checked
+ * their bank found nothing, and the only way to learn the truth was to
+ * email support.
+ *
+ * So: `refundInitiated*` at the decision, `refundSent*` when an admin
+ * marks it paid with a bank reference. The reference is in the second one
+ * because it is what the recipient quotes back if the money never lands.
+ */
 export function refundSubject(input: RefundInput): string {
-  return input.locale === "ar" ? `استرجاع — ${input.eventTitle}` : `Remboursement — ${input.eventTitle}`;
+  return input.locale === "ar"
+    ? `جاري الاسترجاع — ${input.eventTitle}`
+    : `Remboursement en cours — ${input.eventTitle}`;
 }
 
 export function refundHtml(input: RefundInput): string {
   const ar = input.locale === "ar";
   return shell(
     input.locale,
-    `<h1 style="margin:0 0 8px;font-size:22px;">${ar ? "تم الاسترجاع" : "Remboursement effectué"}</h1>
+    `<h1 style="margin:0 0 8px;font-size:22px;">${ar ? "جاري الاسترجاع" : "Remboursement en cours"}</h1>
      <p style="margin:0 0 20px;color:${MUTED};font-size:14px;">
        ${ar ? `مرحباً ${escapeHtml(input.holderName)}،` : `Bonjour ${escapeHtml(input.holderName)},`}
-       ${ar ? "تمت إعادة المبلغ التالي إلى بطاقتك:" : "le montant suivant a été recrédité sur votre carte :"}
+       ${
+         ar
+           ? "سجّلنا استرجاع المبلغ التالي. سنرسل لك تأكيداً آخر بمجرد تحويله فعلياً:"
+           : "nous avons enregistré le remboursement du montant suivant. Vous recevrez une seconde confirmation dès qu'il aura été envoyé :"
+       }
+     </p>
+     <div style="padding:16px;background:${PAPER};border-radius:10px;text-align:center;">
+       <div style="font-size:26px;font-weight:800;color:${LAGON};">${money(input.amountCents)} MAD</div>
+       <div style="color:${MUTED};font-size:14px;margin-top:4px;">${escapeHtml(input.eventTitle)}</div>
+     </div>
+     <p style="margin:20px 0 0;font-size:12px;color:${MUTED};">
+       ${
+         ar
+           ? "يمكنك متابعة الحالة في صفحة تذاكرك."
+           : "Vous pouvez suivre l'état du remboursement depuis vos billets."
+       }
+       ${ar ? "رقم الطلب" : "Commande"} <span style="font-family:monospace;">${escapeHtml(input.orderId)}</span>
+     </p>`,
+  );
+}
+
+export interface RefundSentInput extends RefundInput {
+  /** The CMI or bank reference for the reversal, so the recipient can chase it. */
+  reference: string;
+}
+
+export function refundSentSubject(input: RefundSentInput): string {
+  return input.locale === "ar"
+    ? `تم إرسال الاسترجاع — ${input.eventTitle}`
+    : `Remboursement envoyé — ${input.eventTitle}`;
+}
+
+export function refundSentHtml(input: RefundSentInput): string {
+  const ar = input.locale === "ar";
+  return shell(
+    input.locale,
+    `<h1 style="margin:0 0 8px;font-size:22px;">${ar ? "تم إرسال الاسترجاع" : "Remboursement envoyé"}</h1>
+     <p style="margin:0 0 20px;color:${MUTED};font-size:14px;">
+       ${ar ? `مرحباً ${escapeHtml(input.holderName)}،` : `Bonjour ${escapeHtml(input.holderName)},`}
+       ${ar ? "تم تحويل المبلغ التالي:" : "le montant suivant vous a été envoyé :"}
      </p>
      <div style="padding:16px;background:${PAPER};border-radius:10px;text-align:center;">
        <div style="font-size:26px;font-weight:800;color:${LAGON};">${money(input.amountCents)} MAD</div>
@@ -147,7 +205,8 @@ export function refundHtml(input: RefundInput): string {
      </div>
      <p style="margin:20px 0 0;font-size:12px;color:${MUTED};">
        ${ar ? "قد يستغرق ظهور المبلغ بضعة أيام." : "Le délai d'apparition dépend de votre banque (quelques jours)."}
-       ${ar ? "رقم الطلب" : "Commande"} <span style="font-family:monospace;">${escapeHtml(input.orderId)}</span>
+       ${ar ? "مرجع التحويل" : "Référence"} <span style="font-family:monospace;">${escapeHtml(input.reference)}</span>
+       · ${ar ? "رقم الطلب" : "Commande"} <span style="font-family:monospace;">${escapeHtml(input.orderId)}</span>
      </p>`,
   );
 }

@@ -106,6 +106,18 @@ export function publicOrder(order: Order & { tickets: Ticket[] }, opts: { contac
     cardBank: order.cardBank,
     refundedCents: order.refundedCents,
     refundedAt: order.refundedAt?.toISOString() ?? null,
+    /*
+     * Whether the money has actually been sent, not just decided.
+     *
+     * refundedAt is the DECISION; CMI has no refund API, so the reversal is
+     * made by hand in its back office and recorded here afterwards. Without
+     * these two, a seller waiting on a resale payout saw "remboursé" from
+     * the moment the sale completed and had no way to tell a payout that
+     * had landed from one nobody had actioned yet — the question only
+     * support could answer, by reading the admin console.
+     */
+    refundPaidAt: order.refundPaidAt?.toISOString() ?? null,
+    refundPaidRef: order.refundPaidRef,
     createdAt: order.createdAt.toISOString(),
     tickets: order.tickets.map(publicTicket),
   };
