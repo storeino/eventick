@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "../utils";
 
 /**
@@ -28,10 +29,42 @@ export function Popover({
   // without this the panel still opened on click — a control that looks
   // unavailable and isn't.
   disabled = false,
+  /*
+   * Opt-in only, defaulting to false so every existing caller (city
+   * picker, account menu, EventSwitcher, every Dropdown -- Dropdown is
+   * built on this same primitive) keeps its exact current behaviour.
+   *
+   * The header's search panel (width="w-96") sits near the header's
+   * right edge on a phone, and no amount of fixing the panel's own CSS
+   * solved it cleanly: capping max-width left it correctly sized but
+   * still anchored off screen from an edge-adjacent trigger; centring it
+   * with inset-inline-0 + mx-auto centred the PANEL but, because
+   * position: absolute still counts toward its scrolling ancestor's
+   * overflow even when nothing visually clips it, a panel extending past
+   * both sides of a tiny trigger-sized containing block inflated the
+   * whole PAGE's horizontal scroll range -- the second screenshot showed
+   * the entire header clipped on both edges, not just the popover.
+   *
+   * position: fixed does not have that problem -- a fixed element is
+   * removed from flow against the viewport itself, so it cannot widen
+   * anything it is not a descendant of in the box model sense. True on
+   * mobileSheet renders the panel through a portal as a bottom sheet
+   * instead -- the same shape Modal.jsx already uses (fixed inset-0,
+   * flex items-end sm:items-center) -- rather than trying to out-clever
+   * one trigger's position with more absolute-positioning math.
+   */
+  mobileSheet = false,
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
+  // The mobile sheet is portaled OUT of rootRef's subtree (to
+  // document.body), so the outside-click listener below cannot tell a
+  // click inside it from a click on the real page behind it just by
+  // checking rootRef -- without this, tapping the search input itself
+  // would read as "outside" and close the sheet before anything could
+  // be typed into it.
+  const sheetRef = useRef(null);
   const id = useId();
 
   useEffect(() => {
@@ -44,7 +77,9 @@ export function Popover({
       triggerRef.current?.focus();
     };
     const onPointer = (event) => {
-      if (!rootRef.current?.contains(event.target)) setOpen(false);
+      const inRoot = rootRef.current?.contains(event.target);
+      const inSheet = sheetRef.current?.contains(event.target);
+      if (!inRoot && !inSheet) setOpen(false);
     };
 
     document.addEventListener("keydown", onKey);
@@ -73,37 +108,45 @@ export function Popover({
         {typeof trigger === "function" ? trigger({ open }) : trigger}
       </button>
 
+      {open && mobileSheet ? (
+        // The mobile sheet. Portaled past the header's own backdrop-blur
+        // ancestor for the same reason the drawer was -- see SiteHeader's
+        // own comment on that fix -- and fixed rather than absolute so it
+        // cannot inflate the PAGE's scroll width the way a wide centred
+        // absolute panel did (see the long comment on mobileSheet above).
+        // sm:hidden: above that breakpoint the normal anchored panel
+        // below takes over, where there is room for it near the trigger.
+        createPortal(
+          <div
+            className="fixed inset-0 z-[70] flex items-start justify-center bg-stage/50 p-4 pt-20 backdrop-blur-[2px] sm:hidden"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) close();
+            }}
+            role="presentation"
+          >
+            <div
+              ref={sheetRef}
+              className="w-full max-w-[28rem] overflow-hidden rounded-panel border border-line/10 bg-card text-ink shadow-modal"
+            >
+              {typeof children === "function" ? children({ close }) : children}
+            </div>
+          </div>,
+          document.body,
+        )
+      ) : null}
+
       {open ? (
         <div
           id={id}
           className={cn(
-            // Capping width alone was NOT enough -- reported with a second
-            // screenshot. The search trigger sits near the header's right
-            // edge on a phone (hamburger, search icon, create button and
-            // avatar all crowd that side); align="end" anchors the panel's
-            // RIGHT edge there and grows it LEFTWARD, so even a panel
-            // correctly capped under 300px still started from a point near
-            // the viewport's own right edge and ran off the LEFT side
-            // entirely -- a narrower box in the wrong place is still off
-            // screen. end-0/start-0 describe which edge to grow from, not
-            // where on the viewport that edge actually sits once the
-            // trigger itself is close to one side.
-            //
-            // Fixed with inset-inline-0 + mx-auto below sm:, the same
-            // centring technique already used by TicketPass's QR perforation
-            // and the pro dashboard's InfoTip (see both) -- NOT start-1/2 +
-            // -translate-x-1/2, which was tried here first and reverted: a
-            // negative translate-x is a PHYSICAL transform, so it does not
-            // mirror under RTL and would pull the panel further off-centre
-            // in Arabic rather than centring it. inset-inline-0 is a logical
-            // property, so this has no horizontal transform to mirror at
-            // all. Above sm: back to the original edge-anchored behaviour,
-            // where every existing caller already has the room for it.
-            "absolute top-[calc(100%+0.5rem)] z-50 max-w-[calc(100vw-2rem)] overflow-hidden rounded-panel border border-line/10 bg-card text-ink shadow-modal",
-            "inset-inline-0 mx-auto sm:inset-inline-auto sm:mx-0",
-            align === "end" ? "sm:end-0" : "sm:start-0",
+            "absolute top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-panel border border-line/10 bg-card text-ink shadow-modal",
+            align === "end" ? "end-0" : "start-0",
             width,
             panelClassName,
+            // The mobile sheet above already covers this panel's job
+            // below sm:, so this one stays out of the way there instead
+            // of both being mounted and visible at once.
+            mobileSheet && "hidden sm:block",
           )}
         >
           {typeof children === "function" ? children({ close }) : children}

@@ -264,6 +264,7 @@ export function SiteHeader({ overlay = false }) {
             label={t("searchPh")}
             align="end"
             width="w-96"
+            mobileSheet
             trigger={
               <>
                 <span
