@@ -16,12 +16,58 @@ import { logger } from "./logger.js";
  * Face value is copied onto the listing rather than read live, so an
  * organiser changing a tier price later cannot alter what a listed ticket
  * costs — the buyer pays what the listing showed.
+ *
+ * "What they originally paid" means exactly that, and it is NOT the tier's
+ * current price. The listing used to be created at `tier.priceCents`, so an
+ * organiser raising the price after someone bought produced a listing worth
+ * more than the seller's order ever took: completeResale then asked
+ * refundOrder for more than that order could return, it threw "Refund
+ * exceeds the amount still refundable", and the catch below logged it and
+ * moved on. The buyer kept a valid ticket, the seller lost both the seat and
+ * the money. Seen in real data: a 150 MAD ticket listed at 250.
+ *
+ * So the price comes from the seller's own order, via sellerFaceValue().
  */
+
+/**
+ * What this seat is worth to the seller — what their order can still return.
+ *
+ * Neither Ticket nor OrderLine stores a unit price (OrderLine has qty and
+ * tierId only), so there is no recorded "they paid X for this one". What IS
+ * recorded is the order's own money, and that is the number that governs the
+ * refund: refundOrder refuses anything above `totalCents - refundedCents`.
+ *
+ * So the listing is priced at the per-ticket share of what remains
+ * refundable on that order. For the ordinary case — one order, one ticket,
+ * nothing refunded — that is simply what they paid. For a multi-ticket
+ * order it splits what is left evenly, which is the honest reading when the
+ * order does not record per-seat prices, and it keeps the invariant that
+ * matters: selling every seat on an order never asks for more back than the
+ * order took.
+ *
+ * Deliberately NOT tier.priceCents. That is today's shelf price, which the
+ * organiser can change after the sale; using it is what produced listings
+ * worth more than the seller's order and a refund that silently failed.
+ */
+export function sellerFaceValue(
+  order: { totalCents: number; refundedCents: number },
+  ticketsOnOrder: number,
+): number {
+  const refundable = order.totalCents - order.refundedCents;
+  if (refundable <= 0) return 0;
+  // Floor, so the shares of a multi-ticket order can never sum above what is
+  // refundable — rounding up would recreate the overdraw this fixes.
+  return Math.floor(refundable / Math.max(1, ticketsOnOrder));
+}
 
 export async function listTicketForResale(ticketId: string, sellerId: string | null) {
   const ticket = await prisma.ticket.findUnique({
     where: { id: ticketId },
-    include: { tier: true, order: { include: { event: true } }, resale: true },
+    include: {
+      tier: true,
+      order: { include: { event: true, _count: { select: { tickets: true } } } },
+      resale: true,
+    },
   });
   if (!ticket) throw new HttpError(404, "Ticket not found");
   if (ticket.status !== "VALID") throw new HttpError(409, "Only a valid ticket can be resold");
@@ -43,6 +89,17 @@ export async function listTicketForResale(ticketId: string, sellerId: string | n
     throw new HttpError(409, "This event has already started");
   }
 
+  const priceCents = sellerFaceValue(ticket.order, ticket.order._count.tickets);
+  /*
+   * A comp, or a seat whose order has already been refunded, is worth
+   * nothing back. Listing it would promise a buyer a seat and the seller a
+   * payout that cannot exist — better to refuse than to sell it and fail
+   * the refund afterwards, which is the failure this whole change is about.
+   */
+  if (priceCents <= 0) {
+    throw new HttpError(409, "This ticket has no refundable value to resell");
+  }
+
   // One live listing per ticket. A previous CANCELLED listing may be replaced;
   // the unique constraint is on ticketId, so reuse the row rather than insert.
   if (ticket.resale) {
@@ -52,7 +109,7 @@ export async function listTicketForResale(ticketId: string, sellerId: string | n
       where: { id: ticket.resale.id },
       data: {
         status: "LISTED",
-        priceCents: ticket.tier.priceCents,
+        priceCents,
         token: randomBytes(24).toString("base64url"),
         sellerId,
         soldAt: null,
@@ -68,7 +125,7 @@ export async function listTicketForResale(ticketId: string, sellerId: string | n
     data: {
       ticketId,
       sellerId,
-      priceCents: ticket.tier.priceCents,
+      priceCents,
       token: randomBytes(24).toString("base64url"),
     },
   });
@@ -155,7 +212,28 @@ export async function completeResale(
     await refundOrder(listing.ticket.orderId, listing.priceCents);
     logger.info({ listingId, refunded: listing.priceCents }, "resale complete, seller refunded");
   } catch (err) {
-    logger.error({ err, listingId }, "RESALE SELLER REFUND FAILED — manual payout required");
+    /*
+     * Still swallowed, because the sale is done and the buyer holds a valid
+     * ticket — throwing here would fail their request over the seller's
+     * money and tell them a completed purchase had failed.
+     *
+     * But it now says what is owed to whom. The previous message named only
+     * the listing id, so a failure was a line in a log nobody reads and the
+     * seller simply never got paid: that is how a 150 MAD ticket listed at
+     * 250 went unnoticed. The pending-refunds queue keys on
+     * `refundedCents > 0`, which a FAILED refund never sets — so this log is
+     * the only trace, and it has to carry enough to act on by hand.
+     */
+    logger.error(
+      {
+        err,
+        listingId,
+        sellerOrderId: listing.ticket.orderId,
+        owedCents: listing.priceCents,
+        buyerOrderId,
+      },
+      "RESALE SELLER REFUND FAILED — seller is owed money and is NOT in the pending-refunds queue; pay by hand",
+    );
   }
 
   return result;

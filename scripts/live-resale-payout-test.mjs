@@ -206,18 +206,32 @@ async function main() {
     const sellerTicket = placed.data?.order?.tickets?.[0];
     check("the seller holds a valid ticket", sellerTicket?.status === "VALID", sellerTicket?.ref);
 
+    /*
+     * Raise the tier price BEFORE listing, which is the regression.
+     *
+     * The listing used to be priced at the tier's CURRENT price, so a rise
+     * after the sale produced a listing worth more than the seller's order
+     * had taken: the refund then exceeded what that order could return,
+     * threw, and was swallowed — seller out a seat and the money, with
+     * nothing in the pending queue. Found in real data at 150 -> 250.
+     */
+    await prisma.ticketTier.update({
+      where: { id: tier.id },
+      data: { priceCents: FACE + 10000 },
+    });
+
     const listed = await call("POST", "/api/resale/listings", {
       token: seller,
       body: { ticketId: sellerTicket.id },
     });
     check("the ticket is listed for resale", listed.status === 201, `${listed.status}`);
+    check(
+      "a tier price rise does not inflate the listing past what the seller paid",
+      listed.data?.priceCents === FACE,
+      `listed ${mad(listed.data?.priceCents ?? 0)} MAD, tier now ${mad(FACE + 10000)} MAD`,
+    );
     const token = listed.data?.token;
     check("the listing carries a buy token", Boolean(token));
-    check(
-      "it is listed at face value, not a price the seller chose",
-      listed.data?.priceCents === FACE,
-      `${mad(listed.data?.priceCents ?? 0)} MAD`,
-    );
 
     // Before anything sells, the seller is owed nothing and must not be
     // shown a refund line at all.
