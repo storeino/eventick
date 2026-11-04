@@ -49,13 +49,29 @@ function isGone(tier) {
   return typeof tier.remaining === "number" && tier.remaining <= 0;
 }
 
-function Zone({ tier, locale, t, className, style, fill }) {
+function Zone({ tier, locale, t, className, style, fill, onPick, picked }) {
   const gone = isGone(tier);
+  /*
+   * A zone you can still buy is a button; one that is gone is not.
+   *
+   * It does NOT add to the basket. A diagram that quietly drops a ticket in
+   * your cart is a surprising thing to click, and the quantity still has to
+   * be chosen. It scrolls to that zone's row and marks it, which is what
+   * someone pointing at a picture is actually asking for: "that one — where
+   * is it in the list".
+   */
+  const pickable = Boolean(onPick) && !gone;
+  const Tag = pickable ? "button" : "div";
   return (
-    <div
+    <Tag
+      type={pickable ? "button" : undefined}
+      onClick={pickable ? () => onPick(tier.id) : undefined}
+      aria-label={pickable ? `${eventText(tier, "name", locale)} — ${t("planPick")}` : undefined}
       className={cn(
-        "flex min-h-11 flex-col items-center justify-center px-3 text-center text-sm font-bold",
+        "flex min-h-11 w-full flex-col items-center justify-center px-3 text-center text-sm font-bold",
         fill,
+        pickable && "cursor-pointer transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink",
+        picked && "ring-2 ring-ink ring-offset-2",
         // Drained of colour and dimmed, so a glance at the plan answers
         // "what can I actually buy" before reading a single zone name.
         // Not hidden: the zone still exists, and a buyer looking for it
@@ -69,7 +85,7 @@ function Zone({ tier, locale, t, className, style, fill }) {
       {/* Said in words as well as colour: dimming alone fails for anyone
           with a colour deficiency, and fails everyone on a bright screen. */}
       {gone ? <span className="text-[10px] font-extrabold uppercase tracking-wide">{t("soldOut")}</span> : null}
-    </div>
+    </Tag>
   );
 }
 
@@ -78,7 +94,7 @@ function Zone({ tier, locale, t, className, style, fill }) {
  * concerts and festivals, but now with the event's real zones: dearest
  * nearest the stage, each block widening as it moves back.
  */
-function StagePlan({ tiers, locale, t }) {
+function StagePlan({ tiers, locale, t, onPick, picked }) {
   const zones = ordered(tiers);
   return (
     <>
@@ -98,7 +114,7 @@ function StagePlan({ tiers, locale, t }) {
             key={tier.id}
             tier={tier}
             locale={locale}
-            t={t}
+            t={t} onPick={onPick} picked={picked === tier.id}
             fill={FILLS[i % FILLS.length]}
             className="mx-auto mt-2"
             style={{
@@ -117,7 +133,7 @@ function StagePlan({ tiers, locale, t }) {
  * HALL — a seated room facing a stage. Rows rather than wedges, because the
  * thing a buyer is choosing between is how far back they sit.
  */
-function HallPlan({ tiers, locale, t }) {
+function HallPlan({ tiers, locale, t, onPick, picked }) {
   const zones = ordered(tiers);
   return (
     <>
@@ -130,7 +146,7 @@ function HallPlan({ tiers, locale, t }) {
             key={tier.id}
             tier={tier}
             locale={locale}
-            t={t}
+            t={t} onPick={onPick} picked={picked === tier.id}
             fill={FILLS[i % FILLS.length]}
             className="rounded-control"
             style={{ height: `${Math.max(44, 40 + i * 8)}px` }}
@@ -145,27 +161,27 @@ function HallPlan({ tiers, locale, t }) {
  * STADIUM — tiers wrapping a pitch. The pitch is the centre, and zones ring
  * it, which is the one arrangement where "front" means nothing.
  */
-function StadiumPlan({ tiers, locale, t }) {
+function StadiumPlan({ tiers, locale, t, onPick, picked }) {
   const zones = ordered(tiers);
   const [first, ...rest] = zones;
   return (
     <div className="grid gap-1.5">
       {first ? (
-        <Zone tier={first} locale={locale} t={t} fill={FILLS[0]} className="rounded-t-card" style={{ height: "44px" }} />
+        <Zone tier={first} locale={locale} t={t} onPick={onPick} picked={picked === first.id} fill={FILLS[0]} className="rounded-t-card" style={{ height: "44px" }} />
       ) : null}
       <div className="flex items-stretch gap-1.5">
         {rest[0] ? (
-          <Zone tier={rest[0]} locale={locale} t={t} fill={FILLS[1]} className="w-[22%] rounded-s-card [writing-mode:vertical-rl] rotate-180" />
+          <Zone tier={rest[0]} locale={locale} t={t} onPick={onPick} picked={picked === rest[0].id} fill={FILLS[1]} className="w-[22%] rounded-s-card [writing-mode:vertical-rl] rotate-180" />
         ) : null}
         <div className="flex flex-1 items-center justify-center rounded-card border-2 border-dashed border-line/30 bg-paper py-10 text-xs font-bold uppercase tracking-wide text-muted">
           {t("venuePitch")}
         </div>
         {rest[1] ? (
-          <Zone tier={rest[1]} locale={locale} t={t} fill={FILLS[2]} className="w-[22%] rounded-e-card [writing-mode:vertical-rl]" />
+          <Zone tier={rest[1]} locale={locale} t={t} onPick={onPick} picked={picked === rest[1].id} fill={FILLS[2]} className="w-[22%] rounded-e-card [writing-mode:vertical-rl]" />
         ) : null}
       </div>
       {rest.slice(2).map((tier, i) => (
-        <Zone key={tier.id} tier={tier} locale={locale} t={t} fill={FILLS[(i + 3) % FILLS.length]} className="rounded-b-card" style={{ height: "44px" }} />
+        <Zone key={tier.id} tier={tier} locale={locale} t={t} onPick={onPick} picked={picked === tier.id} fill={FILLS[(i + 3) % FILLS.length]} className="rounded-b-card" style={{ height: "44px" }} />
       ))}
     </div>
   );
@@ -175,7 +191,7 @@ function StadiumPlan({ tiers, locale, t }) {
  * COURSE — a route, not a room. Zones are waves or distances, so they sit on
  * a line from start to finish rather than in a seating bowl.
  */
-function CoursePlan({ tiers, locale, t }) {
+function CoursePlan({ tiers, locale, t, onPick, picked }) {
   /*
    * planOrder first, as everywhere, then CHEAPEST first rather than dearest:
    * on a course the zones are usually distances, and the short one starts
@@ -200,7 +216,7 @@ function CoursePlan({ tiers, locale, t }) {
             key={tier.id}
             tier={tier}
             locale={locale}
-            t={t}
+            t={t} onPick={onPick} picked={picked === tier.id}
             fill={FILLS[i % FILLS.length]}
             className="rounded-full"
             style={{ height: "44px", width: `${Math.min(100, 55 + i * 15)}%` }}
@@ -212,7 +228,7 @@ function CoursePlan({ tiers, locale, t }) {
 }
 
 /** EXPO — halls walked through, so equal blocks on a floor rather than a bowl. */
-function ExpoPlan({ tiers, locale, t }) {
+function ExpoPlan({ tiers, locale, t, onPick, picked }) {
   const zones = ordered(tiers);
   return (
     <>
@@ -225,7 +241,7 @@ function ExpoPlan({ tiers, locale, t }) {
             key={tier.id}
             tier={tier}
             locale={locale}
-            t={t}
+            t={t} onPick={onPick} picked={picked === tier.id}
             fill={FILLS[i % FILLS.length]}
             className="rounded-control"
             style={{ height: "64px" }}
@@ -237,7 +253,7 @@ function ExpoPlan({ tiers, locale, t }) {
 }
 
 /** OPEN_AIR — open ground, no fixed front: soft blobs rather than a bowl. */
-function OpenAirPlan({ tiers, locale, t }) {
+function OpenAirPlan({ tiers, locale, t, onPick, picked }) {
   const zones = ordered(tiers);
   return (
     <div className="grid gap-2">
@@ -246,7 +262,7 @@ function OpenAirPlan({ tiers, locale, t }) {
           key={tier.id}
           tier={tier}
           locale={locale}
-          t={t}
+          t={t} onPick={onPick} picked={picked === tier.id}
           fill={FILLS[i % FILLS.length]}
           className="mx-auto rounded-[40%_60%_55%_45%/55%_45%_60%_40%]"
           style={{ height: "60px", width: `${Math.min(100, 70 + i * 12)}%` }}
@@ -265,7 +281,7 @@ const PLANS = {
   OPEN_AIR: OpenAirPlan,
 };
 
-export function VenuePlan({ event }) {
+export function VenuePlan({ event, onPick, picked }) {
   const { locale, t } = useI18n();
   const all = event.tiers ?? [];
 
@@ -295,7 +311,7 @@ export function VenuePlan({ event }) {
     <>
       {tiers.length > 0 ? (
         <div className="mx-auto mt-5 max-w-lg rounded-card bg-paper p-5">
-          <Plan tiers={tiers} locale={locale} t={t} />
+          <Plan tiers={tiers} locale={locale} t={t} onPick={onPick} picked={picked} />
         </div>
       ) : null}
 

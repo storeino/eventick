@@ -45,6 +45,16 @@ export default function EventDetail() {
    * would have made anyway.
    */
   const [resales, setResales] = useState([]);
+  /*
+   * The zone a buyer tapped on the site plan.
+   *
+   * Clicking a zone does NOT add a ticket: the quantity still has to be
+   * chosen, and a diagram that quietly fills your basket is a surprising
+   * thing to touch. It scrolls to that zone's row and rings it, which is
+   * what pointing at a picture actually asks — "that one, where is it in
+   * the list".
+   */
+  const [pickedTier, setPickedTier] = useState(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -134,6 +144,15 @@ export default function EventDetail() {
   const venue = eventText(event, "venue", locale);
   const soldOut = totalRemaining(event) === 0;
   const isSaved = favorites.includes(event.slug);
+
+  const pickZone = (tierId) => {
+    setPickedTier(tierId);
+    const row = document.getElementById(`tier-${tierId}`);
+    // Guarded: the row is always rendered today, but a tier filtered out of
+    // the list later would otherwise throw on a click.
+    if (!row) return;
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
 
   const change = (id, left, delta) => {
     setQty((current) => {
@@ -353,8 +372,13 @@ export default function EventDetail() {
                 return (
                   <li
                     key={tier.id}
+                    id={`tier-${tier.id}`}
                     className={cn(
                       "rounded-card border p-5 transition",
+                      // Ringed when the buyer arrived here from the plan, so
+                      // the jump lands somewhere obviously connected to what
+                      // they tapped rather than just scrolling.
+                      pickedTier === tier.id && "ring-2 ring-primary ring-offset-2",
                       tier.recommended ? "border-primary/40 bg-brume/40 ring-1 ring-primary/20" : "border-line/10 bg-card",
                       value > 0 && !tier.recommended && "border-primary/30 bg-brume/30",
                       gone && "opacity-55",
@@ -452,7 +476,7 @@ export default function EventDetail() {
           <section className="rounded-card border border-line/10 bg-card p-4 shadow-card md:p-6">
             <h2 className="font-display text-2xl font-extrabold">{t("plan")}</h2>
             <p className="text-sm text-muted">{venue}</p>
-            <VenuePlan event={event} />
+            <VenuePlan event={event} onPick={pickZone} picked={pickedTier} />
           </section>
 
           <section>
