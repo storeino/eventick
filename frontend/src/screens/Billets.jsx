@@ -208,9 +208,9 @@ function BilletsInner() {
 
         {!canUsePro && tab === "past" ? (
           <div className="mt-6 overflow-x-auto rounded-card border border-line/10 bg-card">
-            <div className="flex items-center justify-between p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 p-4">
               <h2 className="font-display text-xl font-bold">{t("historyTitle")}</h2>
-              <button type="button" className="h-11 rounded-full border border-line/20 bg-card px-4 text-sm font-semibold transition hover:bg-paper" onClick={exportCsv}>
+              <button type="button" className="h-11 shrink-0 rounded-full border border-line/20 bg-card px-4 text-sm font-semibold transition hover:bg-paper" onClick={exportCsv}>
                 {t("exportCsv")}
               </button>
             </div>

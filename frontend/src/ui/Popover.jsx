@@ -77,7 +77,14 @@ export function Popover({
         <div
           id={id}
           className={cn(
-            "absolute top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-panel border border-line/10 bg-card text-ink shadow-modal",
+            // max-w here is a SAFETY CEILING, not a substitute for `width`.
+            // The header search popover asks for w-96 (384px), wider than
+            // a 360px phone outright -- end-0/start-0 only pick which edge
+            // it grows from, so no alignment choice keeps a panel wider
+            // than the viewport on screen. calc(100vw-2rem) leaves a 1rem
+            // gutter each side and only binds once `width` would actually
+            // overflow, so every existing w-56/w-64 caller is unaffected.
+            "absolute top-[calc(100%+0.5rem)] z-50 max-w-[calc(100vw-2rem)] overflow-hidden rounded-panel border border-line/10 bg-card text-ink shadow-modal",
             align === "end" ? "end-0" : "start-0",
             width,
             panelClassName,
