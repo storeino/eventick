@@ -102,6 +102,18 @@ async function seedPermissions() {
  * road race, and both exist in this catalogue -- so the two that category
  * gets wrong are matched by name first.
  */
+/**
+ * Whether a seeded event opts into resale.
+ *
+ * Not every organiser wants one. A gala dinner or a trade badge is tied to
+ * the person who booked it; a sold-out derby or festival is exactly where a
+ * secondary market stops seats going empty. Keyed off category rather than
+ * set everywhere, so the seeded catalogue shows both answers.
+ */
+function allowResaleFor(event: { category: string }) {
+  return ["concert", "festivals", "sport", "nightlife"].includes(event.category);
+}
+
 function venueKindFor(event: { slug: string; titleFr: string; category: string }) {
   const name = `${event.slug} ${event.titleFr}`;
   if (/derby|stade/i.test(name)) return "STADIUM" as const;
@@ -154,6 +166,11 @@ async function main() {
         // sixteen events all claiming to be the same room. The
         // organiser changes it per event; this is only a default.
         venueKind: venueKindFor(event),
+        // Resale stays OPT-IN -- selling someone else's seat on is the
+        // organiser's call, which is why the column defaults to false. The
+        // seed turns it on where a secondary market is normal, so the
+        // feature is visible on a fresh database without changing the rule.
+        allowResale: allowResaleFor(event),
         address: event.address,
         startAt: new Date(`${event.start}T${event.time ?? "00:00"}:00`),
         endAt: new Date(`${event.end}T23:59:59`),

@@ -1749,6 +1749,31 @@ organiserRouter.patch(
     const event = await requireOwnedEvent(req.user, slug);
     const body = eventSettingsSchema.parse(req.body ?? {});
 
+    /*
+     * Resale cannot be switched off while seats are listed under it.
+     *
+     * Every surface that shows a resale checks the event's allowResale, so
+     * turning it off leaves live listings still LISTED and invisible
+     * everywhere at once -- the marketplace, the event page, the link the
+     * seller already shared. The seller is told nothing and waits for a
+     * buyer who can no longer see the seat.
+     *
+     * Refused rather than cascaded: withdrawing somebody's listing is their
+     * decision, not a side effect of an organiser changing a setting. The
+     * count is named so the organiser knows what is in the way.
+     */
+    if (body.allowResale === false && event.allowResale) {
+      const live = await prisma.resaleListing.count({
+        where: { status: "LISTED", ticket: { tier: { eventId: event.id } } },
+      });
+      if (live > 0) {
+        throw new HttpError(
+          409,
+          `${live} ticket(s) are currently listed for resale on this event. They must be withdrawn or sold before resale can be turned off.`,
+        );
+      }
+    }
+
     const updated = await prisma.event.update({
       where: { id: event.id },
       data: body,

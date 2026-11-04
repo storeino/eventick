@@ -751,6 +751,22 @@ async function main() {
       "still on sale",
     );
 
+    /*
+     * Resale cannot be switched off out from under a live listing.
+     *
+     * Every surface checks the event's allowResale, so turning it off makes
+     * a LISTED seat invisible everywhere at once while the seller waits for
+     * a buyer who can no longer see it. I did this to my own test listing
+     * before guarding it.
+     */
+    const blocked = await expectStatus("turning resale off with a live listing → 409", "PATCH", `/api/organiser/events/${slug}/settings`, 409, {
+      token: tokens.organiser,
+      body: { allowResale: false },
+    });
+    record("and the refusal names how many are in the way", /1 ticket/.test(blocked.data?.error ?? ""), `${blocked.data?.error}`.slice(0, 48));
+    const stillOn = await call("GET", `/api/events/${slug}/resales`, {});
+    record("the listing is still visible", (stillOn.data?.resales ?? []).length > 0, `${(stillOn.data?.resales ?? []).length}`);
+
     const offer = await expectStatus("GET /:token is public", "GET", `/api/resale/${token}`, 200);
     record(
       "the offer names the event and price",
