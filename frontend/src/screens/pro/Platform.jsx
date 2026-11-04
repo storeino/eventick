@@ -307,10 +307,18 @@ export default function Platform() {
 
       {/* Money owed to buyers, which nothing else on this console shows.
           Above the payouts deliberately: an organiser being paid late is an
-          irritation, a buyer never refunded is a complaint. */}
-      {refunds.refunds.length > 0 ? (
+          irritation, a buyer never refunded is a complaint.
+
+          Always rendered, including when nothing is due. Hiding the whole
+          section on an empty list meant "nobody is waiting for money" and
+          "this console cannot show you that" looked identical — so someone
+          looking for a resale seller's payout found no trace of the feature
+          and assumed it did not exist. */}
+      <SectionTitle>{t.plRefundsDue}</SectionTitle>
+      {refunds.refunds.length === 0 ? (
+        <p className="-mt-2 mb-4 text-sm text-muted">{t.plRefundsNone}</p>
+      ) : (
         <>
-          <SectionTitle>{t.plRefundsDue}</SectionTitle>
           <p className="-mt-2 mb-3 text-sm text-muted">
             {t.plRefundsDueSub} · <span className="font-bold text-ink">{money(refunds.totalCents)} MAD</span>
           </p>
@@ -348,7 +356,7 @@ export default function Platform() {
             ))}
           </div>
         </>
-      ) : null}
+      )}
 
       {refundRow ? (
         <Modal
@@ -385,7 +393,13 @@ export default function Platform() {
 
       {/* Ranking, so the list answers more than one question. Owed first in
           the options because "who do I pay today" is the one this page is
-          opened for. */}
+          opened for.
+
+          Labelled, because unlabelled pills above a list read as FILTERS:
+          "Refunds" was taken for "show me the refunds", and clicking it
+          appeared to do nothing — it reorders organisers by refund rate,
+          and money owed to buyers is its own section further up. */}
+      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-muted">{t.plSortBy}</p>
       <div className="mb-3 inline-flex flex-wrap items-center gap-1 rounded-full bg-paper p-1 text-xs font-bold">
         {[
           ["revenue", t.plSortRevenue],
