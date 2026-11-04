@@ -109,9 +109,21 @@ export function siteUrl(): string {
    */
   if (process.env.NODE_ENV === "production" && (!configured || configured.includes("localhost"))) {
     throw new Error(
-      "NEXT_PUBLIC_SITE_URL must be the real domain for a production build — " +
-        `got ${configured ?? "(unset)"}. It drives every canonical, og:url and sitemap entry; ` +
-        "left at the default, the sitemap advertises localhost to Google.",
+      [
+        `NEXT_PUBLIC_SITE_URL must be the real domain for a production build — got ${configured ?? "(unset)"}.`,
+        "",
+        "It drives every canonical URL, og:url and sitemap entry. Left unset,",
+        "the sitemap advertises localhost to Google and the canonicals point",
+        "somewhere unreachable.",
+        "",
+        "Set it in the build environment, NOT in a committed file — it differs",
+        "per environment and the value is read at BUILD time, so exporting it",
+        "only at runtime is too late:",
+        "",
+        "    NEXT_PUBLIC_SITE_URL=https://eventick.ma npm run build",
+        "",
+        "See frontend/.env.example for the full list.",
+      ].join("\n"),
     );
   }
 

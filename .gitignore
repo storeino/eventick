@@ -8,6 +8,16 @@ artifacts
 dist
 .env
 .env.*
+# ...but NOT the templates. They carry no secrets, and they are the only
+# record of which variables a deploy has to set. Ignoring them is why a CI
+# checkout had no NEXT_PUBLIC_SITE_URL to copy and the production build
+# failed on a variable nobody knew was required.
+# frontend/.env.example only: it holds public NEXT_PUBLIC_* values and no
+# credentials. backend/.env.example stays ignored — the secret scanner
+# rejects it (DATABASE_URL and JWT_SECRET are credential-SHAPED even as
+# placeholders), and a template that teaches people to commit a line
+# starting JWT_SECRET= is the wrong habit to encode.
+!frontend/.env.example
 *.log
 .node_modules.lock
 .DS_Store
