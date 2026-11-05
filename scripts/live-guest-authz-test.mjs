@@ -39,8 +39,8 @@ import { prisma } from "../backend/src/lib/prisma.js";
 const API = process.env.API ?? "http://localhost:4100";
 
 const ACCOUNTS = {
-  customer: { email: "client@eventick.ma", password: "eventick-client-2026" },
-  organiser: { email: "organisateur@eventick.ma", password: "eventick-orga-2026" },
+  customer: { email: "client@eventick.ma", password: "client123" },
+  organiser: { email: "organisateur@eventick.ma", password: "orga1234" },
 };
 
 const results = [];
@@ -319,7 +319,7 @@ setGroup("CLEANUP");
 // Admin holds scope.any, so it can remove an order on any organiser's
 // event -- the organiser token only reaches its own, which is why this
 // used to come back 403 and leak a row per run.
-const adminToken = await login({ email: "admin@eventick.ma", password: "eventick-admin-2026" });
+const adminToken = await login({ email: "admin@eventick.ma", password: "admin123" });
 let leaked = 0;
 for (const id of cleanup.orders) {
   const r = await call("DELETE", `/api/organiser/orders/${id}`, { token: adminToken });

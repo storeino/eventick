@@ -20,11 +20,11 @@
 const API = process.env.API ?? "http://localhost:4100";
 
 const ACCOUNTS = {
-  admin: { email: "admin@eventick.ma", password: "eventick-admin-2026" },
-  organiser: { email: "organisateur@eventick.ma", password: "eventick-orga-2026" },
+  admin: { email: "admin@eventick.ma", password: "admin123" },
+  organiser: { email: "organisateur@eventick.ma", password: "orga1234" },
   // The fixture order below has to be bought by someone, and buying needs an
   // account.
-  customer: { email: "client@eventick.ma", password: "eventick-client-2026" },
+  customer: { email: "client@eventick.ma", password: "client123" },
 };
 
 const results = [];

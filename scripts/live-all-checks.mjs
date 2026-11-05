@@ -170,9 +170,9 @@ async function scopedDelete(label, ids, run) {
   return run(ids);
 }
 
-const org = await login("organisateur@eventick.ma", "eventick-orga-2026");
-const admin = await login("admin@eventick.ma", "eventick-admin-2026");
-const customer = await login("client@eventick.ma", "eventick-client-2026");
+const org = await login("organisateur@eventick.ma", "orga1234");
+const admin = await login("admin@eventick.ma", "admin123");
+const customer = await login("client@eventick.ma", "client123");
 
 if (!org || !admin || !customer) {
   console.log(red("\nCannot sign in as the three demo accounts."));

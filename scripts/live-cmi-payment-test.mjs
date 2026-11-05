@@ -129,7 +129,7 @@ async function signInBuyer() {
   const res = await fetch(`${API}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "client@eventick.ma", password: "eventick-client-2026" }),
+    body: JSON.stringify({ email: "client@eventick.ma", password: "client123" }),
   });
   const data = await res.json();
   holdToken = data.token ?? null;
@@ -369,7 +369,7 @@ async function main() {
     const auth = await fetch(`${API}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "client@eventick.ma", password: "eventick-client-2026" }),
+      body: JSON.stringify({ email: "client@eventick.ma", password: "client123" }),
     });
     const token = (await auth.json()).token;
 

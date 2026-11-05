@@ -138,8 +138,8 @@ const payload = (tierId, over = {}) => ({
 });
 
 async function main() {
-  const organiser = await login({ email: "organisateur@eventick.ma", password: "eventick-orga-2026" });
-  const customer = await login({ email: "client@eventick.ma", password: "eventick-client-2026" });
+  const organiser = await login({ email: "organisateur@eventick.ma", password: "orga1234" });
+  const customer = await login({ email: "client@eventick.ma", password: "client123" });
   if (!organiser || !customer) throw new Error("login failed — is the backend seeded?");
 
   const slugs = [];

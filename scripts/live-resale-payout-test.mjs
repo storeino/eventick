@@ -30,12 +30,12 @@ import { prisma } from "../backend/src/lib/prisma.js";
 
 const API = process.env.API_URL ?? "http://localhost:4100";
 const ACCOUNTS = {
-  organiser: { email: "organisateur@eventick.ma", password: "eventick-orga-2026" },
+  organiser: { email: "organisateur@eventick.ma", password: "orga1234" },
   // The seller. Buys a seat, lists it, and is owed the face value.
-  seller: { email: "client@eventick.ma", password: "eventick-client-2026" },
+  seller: { email: "client@eventick.ma", password: "client123" },
   // Marking a refund as sent needs finance.refund, which the organiser does
   // not hold — the seller's payout is a platform obligation, not theirs.
-  admin: { email: "admin@eventick.ma", password: "eventick-admin-2026" },
+  admin: { email: "admin@eventick.ma", password: "admin123" },
 };
 
 let failures = 0;

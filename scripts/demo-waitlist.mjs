@@ -69,10 +69,10 @@ try {
   if (mode.status !== 200) throw new Error(`backend not reachable at ${API}`);
 
   const admin = (await call("POST", "/auth/login", {
-    email: "admin@eventick.ma", password: "eventick-admin-2026",
+    email: "admin@eventick.ma", password: "admin123",
   })).data?.token;
   const org = (await call("POST", "/auth/login", {
-    email: "organisateur@eventick.ma", password: "eventick-orga-2026",
+    email: "organisateur@eventick.ma", password: "orga1234",
   })).data?.token;
   if (!admin || !org) throw new Error("could not sign in — run `npm run db:seed` first");
 

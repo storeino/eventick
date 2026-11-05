@@ -9,6 +9,8 @@ import catalogFrozen from "./catalog-frozen.json" with { type: "json" };
 // database WITHOUT seeding demo events and accounts over it — see the note
 // there. Imported rather than duplicated, so the two cannot drift.
 import { seedPermissions } from "./seed-permissions.js";
+// One definition of the demo passwords, shared with the reset script.
+import { passwordFor } from "./reset-demo-passwords.js";
 
 const EVENTS = catalogFrozen;
 
@@ -17,13 +19,30 @@ const prisma = new PrismaClient();
 const madToCents = (mad: number) => Math.round(mad * 100);
 
 const SEED_ADMIN_EMAIL = "admin@eventick.ma";
-const SEED_ADMIN_PASSWORD = "eventick-admin-2026";
+/*
+ * Read from the same table reset-demo-passwords.ts writes, so a freshly
+ * seeded database and a repaired one agree. They did not: the passwords
+ * were changed on the shared database and these constants still held the
+ * old ones, which works until someone points a live suite at that database
+ * and every login 401s for no visible reason.
+ */
+const SEED_ADMIN_PASSWORD = passwordFor(SEED_ADMIN_EMAIL);
 
 /** Demo accounts surfaced by the login screen's dev-only quick-login buttons.
  * Kept in sync with frontend/src/demoAccounts.js. */
 const DEMO_ACCOUNTS = [
-  { email: "organisateur@eventick.ma", password: "eventick-orga-2026", name: "Yasmine Organisatrice", role: "ORGANISER" as const },
-  { email: "client@eventick.ma", password: "eventick-client-2026", name: "Karim Client", role: "CUSTOMER" as const },
+  {
+    email: "organisateur@eventick.ma",
+    password: passwordFor("organisateur@eventick.ma"),
+    name: "Yasmine Organisatrice",
+    role: "ORGANISER" as const,
+  },
+  {
+    email: "client@eventick.ma",
+    password: passwordFor("client@eventick.ma"),
+    name: "Karim Client",
+    role: "CUSTOMER" as const,
+  },
 ];
 
 /**

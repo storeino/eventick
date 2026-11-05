@@ -35,6 +35,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:permissions": "tsx prisma/seed-permissions.ts",
+    "db:demo-passwords": "tsx prisma/reset-demo-passwords.ts",
     "db:studio": "prisma studio"
   },
   "prisma": {

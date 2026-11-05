@@ -17,8 +17,8 @@
 const API = process.env.API ?? "http://localhost:4100";
 
 const ACCOUNTS = {
-  organiser: { email: "organisateur@eventick.ma", password: "eventick-orga-2026" },
-  customer: { email: "client@eventick.ma", password: "eventick-client-2026" },
+  organiser: { email: "organisateur@eventick.ma", password: "orga1234" },
+  customer: { email: "client@eventick.ma", password: "client123" },
 };
 
 let failures = 0;

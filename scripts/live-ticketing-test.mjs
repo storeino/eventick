@@ -62,8 +62,8 @@ const call = async (m, path, { token, body, key } = {}) => {
   return { status: r.status, data: d };
 };
 
-const admin = await login('admin@eventick.ma', 'eventick-admin-2026');
-const orga = await login('organisateur@eventick.ma', 'eventick-orga-2026');
+const admin = await login('admin@eventick.ma', 'admin123');
+const orga = await login('organisateur@eventick.ma', 'orga1234');
 const orgaId = (await call('GET', '/api/auth/me', { token: orga })).data.user.id;
 const SUF = Date.now();
 const start = new Date(Date.now() + 30 * 86400000);
@@ -259,7 +259,7 @@ console.log('\n4. EVENT CANCELLATION + MASS REFUND');
 console.log('\n5. RESALE IS OPT-IN');
 {
   const { event, tier } = await mkEvent('resale');
-  const cust = await login('client@eventick.ma', 'eventick-client-2026');
+  const cust = await login('client@eventick.ma', 'client123');
   const h = await hold(event, tier, 1, null, cust);
   await call('POST', `/api/orders/${h.data.order.id}/pay`, { token: cust, body: { holderName: 'Karim Client', email: 'client@eventick.ma', phone: '0612345678' } });
   const t = await p.ticket.findFirst({ where: { orderId: h.data.order.id }, select: { id: true } });

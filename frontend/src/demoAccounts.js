@@ -8,7 +8,7 @@ export const DEMO_ACCOUNTS = [
   {
     id: "client",
     email: "client@eventick.ma",
-    password: "eventick-client-2026",
+    password: "client123",
     labelFr: "Client",
     labelAr: "زبون",
     roleFr: "Achat de billets",
@@ -17,7 +17,7 @@ export const DEMO_ACCOUNTS = [
   {
     id: "organiser",
     email: "organisateur@eventick.ma",
-    password: "eventick-orga-2026",
+    password: "orga1234",
     labelFr: "Organisateur",
     labelAr: "منظم",
     roleFr: "Espace Pro",
@@ -26,7 +26,7 @@ export const DEMO_ACCOUNTS = [
   {
     id: "admin",
     email: "admin@eventick.ma",
-    password: "eventick-admin-2026",
+    password: "admin123",
     labelFr: "Admin",
     labelAr: "مدير",
     roleFr: "Administration",
