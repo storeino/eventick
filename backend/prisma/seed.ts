@@ -5,6 +5,10 @@
 import { PrismaClient, type PromoKind } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import catalogFrozen from "./catalog-frozen.json" with { type: "json" };
+// The permission matrix lives in its own module so it can be applied to a
+// database WITHOUT seeding demo events and accounts over it — see the note
+// there. Imported rather than duplicated, so the two cannot drift.
+import { seedPermissions } from "./seed-permissions.js";
 
 const EVENTS = catalogFrozen;
 
@@ -21,79 +25,6 @@ const DEMO_ACCOUNTS = [
   { email: "organisateur@eventick.ma", password: "eventick-orga-2026", name: "Yasmine Organisatrice", role: "ORGANISER" as const },
   { email: "client@eventick.ma", password: "eventick-client-2026", name: "Karim Client", role: "CUSTOMER" as const },
 ];
-
-/** Mirrors src/domain/permissions.ts. Duplicated rather than imported because
- * the seed loads only @prisma/client and frozen JSON — reaching into src/
- * would drag the backend's ESM/tsx build config into the seed's runtime. If
- * you add a permission there, add it here. */
-const PERMISSION_CATALOG: Array<[string, string]> = [
-  ["events.manage", "Create, edit, hide and delete events, and manage their ticket tiers"],
-  ["orders.manage", "View orders, admit and re-issue tickets, cancel and delete orders"],
-  ["gate.checkin", "Check tickets in at the door and download the offline manifest"],
-  ["finance.view", "View revenue, payout and platform-fee figures"],
-  ["finance.refund", "Refund an order, in full or in part"],
-  ["promo.manage", "Create, edit and delete promotional codes"],
-  ["uploads.create", "Upload event images"],
-  ["users.manage", "List users and change their roles"],
-  ["scope.any", "Act on any organiser's data, not only your own"],
-];
-
-const ROLE_GRANTS: Record<"CUSTOMER" | "ORGANISER" | "ADMIN", string[]> = {
-  CUSTOMER: [],
-  ORGANISER: [
-    "events.manage",
-    "orders.manage",
-    "gate.checkin",
-    "finance.view",
-    "finance.refund",
-    "promo.manage",
-    "uploads.create",
-  ],
-  ADMIN: [
-    "events.manage",
-    "orders.manage",
-    "gate.checkin",
-    "finance.view",
-    "finance.refund",
-    "promo.manage",
-    "uploads.create",
-    "users.manage",
-    "scope.any",
-  ],
-};
-
-/**
- * Seeds the permission catalogue and the per-role grants.
- *
- * Unlike every other upsert in this file, the grants are PRUNED to match:
- * `update: {}` would mean a capability removed from ROLE_GRANTS lingers in
- * the database forever, and for permissions that is a security property, not
- * a harmless staleness — a revoked power would never actually be revoked.
- *
- * The flip side is that re-seeding resets any grant an admin changed through
- * the UI back to these defaults. That is the intended trade for a dev seed,
- * and it doubles as the recovery path if someone revokes too much.
- */
-async function seedPermissions() {
-  for (const [key, description] of PERMISSION_CATALOG) {
-    await prisma.permission.upsert({
-      where: { key },
-      update: { description },
-      create: { key, description },
-    });
-  }
-
-  for (const [role, keys] of Object.entries(ROLE_GRANTS) as Array<["CUSTOMER" | "ORGANISER" | "ADMIN", string[]]>) {
-    await prisma.rolePermission.deleteMany({ where: { role, permissionKey: { notIn: keys } } });
-    for (const permissionKey of keys) {
-      await prisma.rolePermission.upsert({
-        where: { role_permissionKey: { role, permissionKey } },
-        update: {},
-        create: { role, permissionKey },
-      });
-    }
-  }
-}
 
 /**
  * A reasonable venue shape for a seeded event.
@@ -131,7 +62,7 @@ function venueKindFor(event: { slug: string; titleFr: string; category: string }
 }
 
 async function main() {
-  await seedPermissions();
+  await seedPermissions(prisma);
 
   // The only user the app has no other way to create: every ORGANISER/ADMIN
   // account after this one is granted via PATCH /api/auth/users/:id/role by
