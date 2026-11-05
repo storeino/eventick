@@ -264,7 +264,14 @@ export default function EventDetail() {
           makes white text unreadable. Opaque at the very bottom where the
           text is densest, gone by 60% of the height, so the top two-fifths
           of the photo are untouched. */}
-      <section className="relative -mt-16 overflow-hidden bg-stage pt-16 text-stage-fg">
+      {/* Measured header height, not a hardcoded 4rem — same reason as
+          Home's hero: EventTicker lives inside the sticky header and is
+          conditional, so 4rem is only right when it has nothing to show.
+          See --site-header-h in styles.css. */}
+      <section
+        className="relative overflow-hidden bg-stage text-stage-fg"
+        style={{ marginTop: "calc(var(--site-header-h) * -1)", paddingTop: "var(--site-header-h)" }}
+      >
         <img src={event.image} alt="" className="absolute inset-0 h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-stage via-stage/45 via-60% to-transparent" />
         <div className="relative mx-auto max-w-7xl px-4 py-12 md:px-8 md:py-16">

@@ -142,7 +142,15 @@ export default function Home() {
           the height — but the hero no longer fills the screen on its own at
           any size, which was the actual complaint. max-h stops it from
           regressing to that on a short window. */}
-      <section className="relative -mt-16 flex max-h-[92vh] min-h-[min(62vh,38rem)] flex-col bg-stage pt-16 text-stage-fg">
+      {/* Offset by the header's MEASURED height, not a hardcoded 4rem.
+          EventTicker renders inside the sticky header and is conditional,
+          so the header is 64px or 100px depending on the data — with a
+          fixed -mt-16/pt-16 the hero's kicker and headline rode up under
+          the bar whenever the ticker was showing. See --site-header-h. */}
+      <section
+        className="relative flex max-h-[92vh] min-h-[min(62vh,38rem)] flex-col bg-stage text-stage-fg"
+        style={{ marginTop: "calc(var(--site-header-h) * -1)", paddingTop: "var(--site-header-h)" }}
+      >
         {/*
           The photo was opacity-45 beneath a gradient that ran to a solid
           `from-stage` at the bottom, so it was dimmed twice and the venue

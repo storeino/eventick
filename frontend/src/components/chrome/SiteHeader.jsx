@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Check, ChevronDown, LayoutDashboard, LogOut, MapPin, Menu, Moon, Search, Sun, Tag, Ticket, User, X } from "lucide-react";
@@ -110,6 +110,33 @@ export function SiteHeader({ overlay = false }) {
   // Transparent over a hero image until the page scrolls.
   const onImage = overlay && !scrolled;
 
+  /*
+   * Publish the header's real height as --site-header-h.
+   *
+   * A full-bleed hero tucks under the sticky header with `-mt-16 pt-16`,
+   * which assumes the header is exactly h-16 (64px). It is not: EventTicker
+   * renders INSIDE this element, adding h-9 when there is anything to show
+   * and nothing when there is not — so the header is 64px or 100px
+   * depending on the data, and the hero's fixed 64px left its content
+   * riding up under the bar whenever the ticker was present.
+   *
+   * Measured rather than computed from the parts, so adding another strip
+   * to the header cannot silently desynchronise the heroes again. Observed
+   * because the ticker can appear or disappear after the first paint.
+   */
+  const headerRef = useRef(null);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const publish = () => {
+      document.documentElement.style.setProperty("--site-header-h", `${el.offsetHeight}px`);
+    };
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const results = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (needle.length < 2) return [];
@@ -152,6 +179,7 @@ export function SiteHeader({ overlay = false }) {
 
   return (
     <header
+      ref={headerRef}
       className={cn(
         "sticky top-0 z-40 border-b transition-colors duration-200",
         // onImage is deliberately always-dark, matching the dark hero it
@@ -161,12 +189,25 @@ export function SiteHeader({ overlay = false }) {
     >
       <EventTicker events={events} onImage={onImage} />
 
-      <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 md:px-8">
+      {/*
+        min-w-0 on the bar, and the inline nav deferred to xl.
+
+        Everything used to switch at `lg`: the hamburger vanished and the
+        full nav appeared in the same breath, so 1024-1280px had to carry
+        brand + city + three nav links + a w-96 search pill + the pink CTA
+        + the theme toggle + sign-in all at once. It does not fit — the
+        items have whitespace-nowrap, so instead of wrapping they pushed
+        each other out and the row squeezed, which is what a client
+        reported on desktop. Staggering it gives that band a layout: the
+        drawer (which already carries every nav link) stays until xl, and
+        only then does the inline nav take over.
+      */}
+      <div className="mx-auto flex h-16 min-w-0 max-w-7xl items-center gap-2 px-4 md:px-8">
         <IconButton
           label={t("openMenu")}
           size="sm"
           tone={onImage ? "inverse" : "neutral"}
-          className="lg:hidden"
+          className="xl:hidden"
           onClick={() => setMenuOpen(true)}
         >
           <Menu className="size-5" />
@@ -231,7 +272,10 @@ export function SiteHeader({ overlay = false }) {
           </Popover>
         </div>
 
-        <nav aria-label={t("explore")} className="ms-2 hidden items-center gap-1 lg:flex">
+        {/* xl, not lg — see the note on the bar above. min-w-0 so the nav
+            yields space instead of forcing the row wider than the viewport
+            when a locale makes these labels long. */}
+        <nav aria-label={t("explore")} className="ms-2 hidden min-w-0 items-center gap-1 xl:flex">
           {NAV.map((item) => {
             const active = `${pathname}${search}` === item.to || (item.to === "/explorer" && pathname === "/explorer" && !search);
             return (
@@ -256,7 +300,11 @@ export function SiteHeader({ overlay = false }) {
           })}
         </nav>
 
-        <div className="ms-auto flex items-center gap-1.5">
+        {/* shrink-0: these are the actions, and they must keep their size —
+            without it the flex row steals width from the pink CTA and the
+            sign-in button before anything else gives, which is how they
+            ended up looking cramped. */}
+        <div className="ms-auto flex shrink-0 items-center gap-1.5">
           {/* Search — a real pill with its own placeholder text on desktop,
               not just a bare icon, so it reads as "search this site" rather
               than a mystery button you have to click to find out. */}
@@ -267,18 +315,27 @@ export function SiteHeader({ overlay = false }) {
             mobileSheet
             trigger={
               <>
+                {/* The worded pill waits for xl, where the inline nav also
+                    appears. Between md and lg the bar is at its tightest
+                    (nav in the drawer, but CTA + toggle + sign-in all
+                    present), and spending ~200px on the word "Concert,
+                    ville, artiste..." there is what pushed the row over. */}
                 <span
                   className={cn(
-                    "hidden items-center gap-2 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition md:inline-flex",
+                    "hidden items-center gap-2 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition xl:inline-flex",
                     onImage ? "bg-stage-fg/10 text-stage-fg/70 hover:bg-stage-fg/15" : "bg-paper text-muted hover:bg-brume",
                   )}
                 >
                   <Search className="size-4 shrink-0" aria-hidden />
                   {t("searchPh")}
                 </span>
+                {/* xl:hidden, paired with the worded pill above. At md it
+                    was the other way round, so moving the pill to xl
+                    without moving this would have left md-to-lg with no
+                    search control at all. */}
                 <span
                   className={cn(
-                    "inline-flex size-10 items-center justify-center rounded-full transition md:hidden",
+                    "inline-flex size-10 items-center justify-center rounded-full transition xl:hidden",
                     onImage ? "bg-stage-fg/15 hover:bg-stage-fg/25" : "bg-paper hover:bg-brume",
                   )}
                 >
@@ -533,9 +590,12 @@ export function SiteHeader({ overlay = false }) {
           uses for the identical reason. */}
       {menuOpen ? createPortal(
         <>
-          <div className="fixed inset-0 z-[55] bg-stage/50 backdrop-blur-[2px] lg:hidden" onClick={() => setMenuOpen(false)} role="presentation" />
+          {/* xl:hidden, matching the hamburger that opens it. Left at lg
+              these would vanish at 1024px while the button was still on
+              screen, so the drawer could be opened and never seen. */}
+          <div className="fixed inset-0 z-[55] bg-stage/50 backdrop-blur-[2px] xl:hidden" onClick={() => setMenuOpen(false)} role="presentation" />
           <div
-            className="fixed inset-y-0 start-0 z-[60] flex w-[min(20rem,86vw)] flex-col bg-card text-ink lg:hidden"
+            className="fixed inset-y-0 start-0 z-[60] flex w-[min(20rem,86vw)] flex-col bg-card text-ink xl:hidden"
             role="dialog"
             aria-modal="true"
             aria-label={t("openMenu")}

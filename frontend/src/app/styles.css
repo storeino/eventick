@@ -16,6 +16,17 @@
  */
 
 :root {
+  /*
+   * The sticky header's real height, republished by SiteHeader on every
+   * resize. A full-bleed hero offsets itself by this instead of assuming
+   * h-16: the header also carries EventTicker, which is conditional, so
+   * its height is 64px or 100px depending on the data.
+   *
+   * 4rem is only the pre-hydration guess (the bar alone, no ticker); the
+   * measured value replaces it on mount.
+   */
+  --site-header-h: 4rem;
+
   /* Surfaces: warm-neutral off-white, not the previous blue-tinted gray. */
   --et-paper: #f7f6f9;
   --et-card: #ffffff;
