@@ -167,7 +167,11 @@ export default function Resales() {
                       </div>
                       <Link
                         to={`/revente/${r.token}`}
-                        className="inline-flex h-10 items-center justify-center rounded-full bg-primary px-4 text-sm font-semibold text-on-primary"
+                        /* text-primary-fg, not text-on-primary: the latter
+                           is not a token, so this label had no colour of
+                           its own and inherited whatever sat behind the
+                           pink fill. */
+                        className="inline-flex h-10 items-center justify-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-fg"
                       >
                         {t("resaleMarketBuy")}
                       </Link>

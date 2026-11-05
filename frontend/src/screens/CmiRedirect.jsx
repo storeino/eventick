@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, Lock, ShieldCheck } from "lucide-react";
+import { CreditCard, ExternalLink, Lock, ShieldCheck } from "lucide-react";
 import { money } from "../api";
 import { useI18n } from "../i18n";
+import { Button } from "../ui";
 
 /**
  * Hand-off to CMI.
@@ -54,28 +55,52 @@ export default function CmiRedirect({ action, fields, dueCents, onLeave }) {
         <input key={name} type="hidden" name={name} value={value} />
       ))}
 
-      <div className="rounded-2xl border border-line/60 bg-brume/40 p-4">
-        <p className="flex items-center gap-2 text-sm font-semibold">
-          <ShieldCheck className="size-4 shrink-0 text-lagon" aria-hidden />
+      {/* The reassurance panel. `brume` is the brand tint, so this reads as
+          part of Eventick rather than a browser warning — the point is that
+          leaving for CMI is the normal, safe path, not an interruption. */}
+      <div className="rounded-panel border border-primary/15 bg-brume/50 p-4">
+        <p className="flex items-center gap-2 text-sm font-bold">
+          <ShieldCheck className="size-4.5 shrink-0 text-primary" aria-hidden />
           {t("cmiTitle")}
         </p>
         <p className="mt-2 text-xs leading-relaxed text-muted">{t("cmiExplain")}</p>
       </div>
 
-      <button
+      {/* The amount, stated once and large.
+
+          This is the last screen before the buyer's money leaves, and it used
+          to show the total only inside the button's own label. Saying it on
+          its own line first means the figure they confirm is the figure they
+          read, not something they have to parse out of a sentence. */}
+      <div className="mt-4 flex items-baseline justify-between gap-3 rounded-panel border border-line/15 bg-paper px-4 py-3.5">
+        <span className="flex items-center gap-2 text-sm font-semibold text-muted">
+          <CreditCard className="size-4 shrink-0" aria-hidden />
+          {t("total")}
+        </span>
+        <span className="font-display text-xl font-extrabold tabular-nums">{money(dueCents)} MAD</span>
+      </div>
+
+      {/*
+        The shared Button, not a hand-rolled one.
+
+        This was `bg-safran text-encre` — tokens the v3 charte deleted. An
+        undefined Tailwind colour emits no CSS at all, so the one button on
+        the one screen where money changes hands rendered as bare text on the
+        page background: no fill, no pill, nothing to aim at. It looked like a
+        caption, and a buyer reported exactly that. Using Button means it
+        cannot drift from the rest of the site again, and it brings the
+        44px-plus target and the loading state with it.
+      */}
+      <Button
         type="submit"
-        disabled={going}
-        className="mt-5 flex h-14 w-full items-center justify-center gap-2 rounded-full bg-safran text-sm font-semibold text-encre disabled:opacity-60"
+        full
+        size="lg"
+        loading={going}
+        icon={going ? null : <ExternalLink className="size-4" aria-hidden />}
+        className="mt-4"
       >
-        {going ? (
-          t("cmiGoing")
-        ) : (
-          <>
-            <ExternalLink className="size-4 shrink-0" aria-hidden />
-            {tf("cmiPayNow", { total: `${money(dueCents)} MAD` })}
-          </>
-        )}
-      </button>
+        {going ? t("cmiGoing") : tf("cmiPayNow", { total: `${money(dueCents)} MAD` })}
+      </Button>
 
       <p className="mt-3 flex items-center justify-center gap-2 text-center text-xs text-muted">
         <Lock className="size-3 shrink-0" aria-hidden />

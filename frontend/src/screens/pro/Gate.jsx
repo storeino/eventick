@@ -354,7 +354,11 @@ export default function Gate() {
               <button
                 type="button"
                 onClick={undoLast}
-                className="text-xs font-bold text-encre/60 underline decoration-dotted underline-offset-4 hover:text-corail"
+                /* stage-muted, not encre/60: this sits on the always-dark
+                   scan card, and encre flips with the theme. hover was
+                   `corail`, a token the v3 charte deleted — so it emitted
+                   no CSS and the link had no hover state at all. */
+                className="text-xs font-bold text-stage-muted underline decoration-dotted underline-offset-4 transition hover:text-stage-fg"
               >
                 {t.undoLast}
               </button>
