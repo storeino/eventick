@@ -564,7 +564,7 @@ function ZoneCard({ tier, locale, t, nowIso, venueKind, onEdit, onRemove }) {
   const textColor = { ok: "text-success", low: "text-accent", out: "text-danger" }[tone];
 
   return (
-    <article className="flex flex-col gap-4 rounded-card border border-line/10 bg-card p-5 shadow-card">
+    <article className="flex min-w-0 flex-col gap-4 rounded-card border border-line/10 bg-card p-5 shadow-card">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="truncate font-display text-subhead font-bold">{eventText(tier, "name", locale)}</h3>

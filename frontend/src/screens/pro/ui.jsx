@@ -147,7 +147,7 @@ export function SearchInput({ value, onChange, placeholder, onSubmit }) {
         e.preventDefault();
         onSubmit?.();
       }}
-      className="relative flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-full border border-line/20 bg-card px-4 transition focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/15 sm:max-w-sm"
+      className="relative flex h-11 w-full min-w-0 basis-full items-center gap-2.5 rounded-full border border-line/20 bg-card px-4 transition focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/15 sm:w-auto sm:flex-1 sm:basis-auto sm:max-w-sm"
     >
       <Search className="size-4 shrink-0 text-primary" aria-hidden />
       <input
@@ -177,7 +177,14 @@ export function FilterBar({ search, controls = [], activeCount = 0, onReset, res
             event-shaped onChange, so the adapter below keeps every existing
             `(e) => setX(e.target.value)` working unchanged. */}
         {controls.map((control) => (
-          <div key={control.key} className="flex flex-col gap-1.5">
+          /* Full width on a phone, the caller's width from sm up.
+             control.style is a fixed pixel width (170-200px). Once the row
+             wraps -- which it does on any phone, since two controls alone
+             exceed ~296px -- each one sat at that width on a line of its
+             own, leaving 90-140px of dead space beside it and a column of
+             ragged pills. The fixed width is really a cap for the wide
+             layout, so it only applies once there is a row to share. */
+          <div key={control.key} className="flex min-w-0 basis-full flex-col gap-1.5 sm:basis-auto">
             {/* A <label> can no longer wrap this -- the trigger is a button,
                 not a form control, so the implicit association is gone.
                 aria-labelledby points at the visible text instead, which
@@ -189,7 +196,7 @@ export function FilterBar({ search, controls = [], activeCount = 0, onReset, res
             >
               {control.label}
             </span>
-            <div style={control.style}>
+            <div className="w-full sm:w-[var(--filter-w)]" style={{ "--filter-w": `${control.style?.width ?? 180}px` }}>
               <Dropdown
                 value={control.value}
                 onChange={(value) => control.onChange({ target: { value } })}

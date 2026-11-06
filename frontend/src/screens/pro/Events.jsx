@@ -750,7 +750,7 @@ function EventRow({ row, locale, t, onEdit, onDuplicate, onGuests, onContact, on
   const textColor = { ok: "text-success", low: "text-accent", out: "text-danger" }[tone];
 
   return (
-    <article className="flex flex-col gap-4 rounded-card border border-line/10 bg-card p-5 shadow-card">
+    <article className="flex min-w-0 flex-col gap-4 rounded-card border border-line/10 bg-card p-5 shadow-card">
       <div className="flex items-start gap-3">
         <img src={event.image} alt="" className="size-14 shrink-0 rounded-control object-cover" />
         <div className="min-w-0 flex-1">
