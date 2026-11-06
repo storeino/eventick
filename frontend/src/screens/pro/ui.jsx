@@ -34,8 +34,11 @@ export function PageHead({ title, sub, actions }) {
 export function SectionTitle({ children, action }) {
   return (
     <div className="mb-4 mt-8 flex items-center justify-between gap-3">
-      <h2 className="font-display text-[22px] font-bold tracking-tight">{children}</h2>
-      {action}
+      {/* min-w-0 + truncate: the heading sits on one line beside an action
+          link, and without a floor it held the whole card open at the
+          title's own width on a phone. */}
+      <h2 className="min-w-0 truncate font-display text-[22px] font-bold tracking-tight">{children}</h2>
+      {action ? <div className="shrink-0">{action}</div> : null}
     </div>
   );
 }

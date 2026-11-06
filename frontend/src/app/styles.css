@@ -329,6 +329,25 @@
     color: var(--color-ink);
     font-family: var(--font-sans);
     line-height: 1.55;
+    /* A backstop, not a fix.
+
+       One element that refuses to shrink -- a flex or grid item whose
+       default min-width is auto, a long unbroken string, a fixed-width
+       table -- makes the whole document wider than the viewport. Every
+       section then scrolls sideways together, which reads as "the design
+       is broken" rather than "this one card is too wide", and on a phone
+       it clips content at BOTH edges because the page is centred.
+
+       Clamped so a single missed min-w-0 degrades to one truncated row
+       instead of a page that slides. The real fix is always on the
+       offending element; this only stops it taking the page with it.
+
+       clip, NOT hidden. overflow-x:hidden makes this element a scroll
+       container, and position:sticky resolves against the nearest
+       scrolling ancestor -- so the pro Topbar, the pro Sidebar and the
+       site header would all stop sticking to the viewport. clip does no
+       scrolling and creates no such container, so sticky still works. */
+    overflow-x: clip;
   }
 
   html[dir="rtl"] body {

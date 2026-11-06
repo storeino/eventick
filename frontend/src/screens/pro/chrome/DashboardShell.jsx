@@ -69,7 +69,12 @@ export default function DashboardShell({ sections, children }) {
   const closeNav = useCallback(() => setNavOpen(false), []);
 
   return (
-    <div className="flex min-h-screen bg-paper text-ink">
+    /* min-w-0 on the root too, not only on the main column.
+       A flex item's default min-width is auto: without this, a single row
+       that cannot shrink (a long event title beside its link) sets a floor
+       on the whole shell, the page grows wider than the viewport, and the
+       cards get clipped at BOTH edges rather than just overflowing right. */
+    <div className="flex min-h-screen min-w-0 bg-paper text-ink">
       <Sidebar
         sections={sections}
         open={navOpen}
