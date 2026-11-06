@@ -148,7 +148,13 @@ export default function Overview() {
           </SectionTitle>
           <ul className="grid gap-3">
             {upcoming.map((event) => (
-              <li key={event.slug} className="flex items-center justify-between gap-3">
+              /* min-w-0 on the <li> too. It is a grid item of the <ul>
+                 above, so its own min-width defaults to auto and the
+                 column was sized to the untruncated title plus the
+                 shrink-0 link -- which is why the inner min-w-0 and the
+                 truncate below never took effect and "Public page" sat
+                 outside the card. */
+              <li key={event.slug} className="flex min-w-0 items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <img src={event.image} alt="" className="size-10 shrink-0 rounded-control object-cover" />
                   <div className="min-w-0">
@@ -183,7 +189,8 @@ export default function Overview() {
           </SectionTitle>
           <ul className="grid gap-3">
             {recent.map((order) => (
-              <li key={order.id} className="flex items-center justify-between gap-3">
+              /* min-w-0: a grid item of the <ul>, same as the list above. */
+              <li key={order.id} className="flex min-w-0 items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-control bg-brume text-[13px] font-bold text-primary" aria-hidden>
                     {(order.holderName || "?").slice(0, 1).toUpperCase()}

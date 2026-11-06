@@ -373,7 +373,7 @@ export default function Checkout() {
 
                 <ul className="mt-4 grid gap-2 border-t border-stage-fg/15 pt-4 text-sm">
                   {lines.map((line) => (
-                    <li key={line.tier.id} className="flex justify-between gap-3">
+                    <li key={line.tier.id} className="flex min-w-0 justify-between gap-3">
                       <span className="min-w-0">
                         <span className="font-semibold tabular-nums">{line.qty}x</span>{" "}
                         {eventText(line.tier, "name", locale)}

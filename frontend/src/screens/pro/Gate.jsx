@@ -380,7 +380,7 @@ export default function Gate() {
           ) : (
             <ul className="grid gap-2">
               {log.map((entry, i) => (
-                <li key={`${entry.ref}-${i}`} className="flex items-center justify-between gap-3 rounded-control bg-paper px-3 py-2.5">
+                <li key={`${entry.ref}-${i}`} className="flex min-w-0 items-center justify-between gap-3 rounded-control bg-paper px-3 py-2.5">
                   <PersonCell
                     name={entry.holder || entry.ref}
                     sub={entry.at.toLocaleTimeString(intlLocaleTag(locale), { hour: "2-digit", minute: "2-digit" })}

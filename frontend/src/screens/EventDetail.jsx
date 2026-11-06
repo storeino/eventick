@@ -537,7 +537,7 @@ export default function EventDetail() {
               ) : (
                 <ul className="grid gap-3 text-sm">
                   {lines.map((line) => (
-                    <li key={line.tier.id} className="flex items-center justify-between gap-3">
+                    <li key={line.tier.id} className="flex min-w-0 items-center justify-between gap-3">
                       <span className="flex min-w-0 items-center gap-2">
                         {/* A colour dot tying each line back to its tier --
                             the cart used to be plain text with nothing

@@ -481,7 +481,7 @@ export function VenuePlan({ event, onPick, picked }) {
           <p className="text-xs font-bold uppercase tracking-wide text-muted">{t("planAdmissions")}</p>
           <ul className="mt-2 grid gap-1.5">
             {other.map((tier) => (
-              <li key={tier.id} className="flex items-baseline justify-between gap-3 text-sm">
+              <li key={tier.id} className="flex min-w-0 items-baseline justify-between gap-3 text-sm">
                 <span className="min-w-0 font-semibold">{eventText(tier, "name", locale)}</span>
                 <span className="shrink-0 tabular-nums text-muted">{groupNumber(tier.capacity)}</span>
               </li>
