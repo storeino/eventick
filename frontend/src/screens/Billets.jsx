@@ -565,7 +565,13 @@ function Mini({ value, label }) {
 
 function SmallTicket({ ticket, locale, t, onTransfer }) {
   return (
-    <article className="flex gap-3 rounded-card border border-line/10 bg-card p-3 shadow-card">
+    /* min-w-0 on the article itself, not only on the inner column.
+       This card is a grid item (see the md:grid-cols-2 above), and a grid
+       item's default min-width is auto, not 0 -- so the track was held to
+       the card's min-content width, which is the two buttons side by side
+       plus the image. That is ~406px, wider than a 360-390px phone, so the
+       card ran past the screen edge instead of shrinking. */
+    <article className="flex min-w-0 gap-3 rounded-card border border-line/10 bg-card p-3 shadow-card">
       <img src={ticket.event.image} alt="" className="size-20 shrink-0 rounded-control object-cover" />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
@@ -581,7 +587,10 @@ function SmallTicket({ ticket, locale, t, onTransfer }) {
           </div>
           <p className="shrink-0 font-display text-sm font-extrabold tabular-nums">{money(ticket.priceCents)} MAD</p>
         </div>
-        <div className="mt-2 flex gap-2">
+        {/* flex-wrap, so the two buttons stack rather than forcing the card
+            wider than the viewport. "Transfer to a friend" alone is ~168px;
+            the pair plus the thumbnail cannot fit a phone on one line. */}
+        <div className="mt-2 flex flex-wrap gap-2">
           <Link to={`/billet/${ticket.id}`} className="inline-flex h-10 items-center rounded-full bg-action px-3.5 text-sm font-semibold text-action-fg transition hover:bg-action-hover">
             {t("seeQr")}
           </Link>
