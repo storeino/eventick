@@ -38,6 +38,22 @@ export default function Platform() {
    * gain at the scale of one platform's organisers.
    */
   const [sortBy, setSortBy] = useState("revenue");
+  /*
+   * Which half of the marketplace is being looked at.
+   *
+   * This console pays two different people out of two different pots, and
+   * they were stacked on one scrolling page: a CLIENT is owed a resale
+   * refund the platform is holding, an ORGANISER is owed takings minus the
+   * fee. The amounts look alike and the buttons are both "mark it sent",
+   * so the one screen invited paying the wrong person from the wrong
+   * ledger -- and the queue an admin opens this page for sat above a seller
+   * table it has nothing to do with.
+   *
+   * Split by WHO IS PAID rather than by feature, because that is the
+   * decision being made. Overview keeps the numbers that describe the
+   * marketplace as a whole and belong to neither side.
+   */
+  const [tab, setTab] = useState("overview");
   /** Organisers asking to move onto a different plan. */
   const [planRequests, setPlanRequests] = useState([]);
   /*
@@ -170,10 +186,59 @@ export default function Platform() {
     }
   };
 
+  /* Counts on the tabs, so an admin can see there is something waiting
+     without opening each one. Only outstanding WORK is counted -- the
+     number of organisers is not a to-do, so Organisateurs counts what is
+     actually queued there (payouts to action, plan requests to decide). */
+  const clientTodo = refunds.refunds.length;
+  const organiserTodo =
+    (payouts ?? []).filter((row) => row.status === "PENDING").length + planRequests.length;
+
+  const TABS = [
+    ["overview", t.plTabOverview, 0],
+    ["clients", t.plTabClients, clientTodo],
+    ["organisers", t.plTabOrganisers, organiserTodo],
+  ];
+
   return (
     <div>
       <PageHead title={t.platform} sub={t.platformSub} />
 
+      {/* Pills rather than underlines, matching the account tabs on
+          /billets -- this app has one tab idiom and a second one here
+          would just be a second thing to learn. */}
+      <div className="mb-5 flex gap-2 overflow-x-auto" role="tablist">
+        {TABS.map(([id, label, count]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            className={cn(
+              "h-11 shrink-0 rounded-full px-4 text-sm font-semibold transition",
+              tab === id ? "bg-action text-action-fg" : "bg-card text-ink hover:bg-brume",
+            )}
+            onClick={() => setTab(id)}
+          >
+            {label}
+            {count > 0 ? (
+              <span
+                className={cn(
+                  "ms-2 rounded-full px-2 py-0.5 text-xs font-bold",
+                  // On the selected pill the badge sits on the action
+                  // colour, where warn-bg would be invisible.
+                  tab === id ? "bg-action-fg/20 text-action-fg" : "bg-warn-bg text-warn",
+                )}
+              >
+                {count}
+              </span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+
+      {tab === "overview" ? (
+      <>
       {!stats ? (
         <StatSkeletons count={4} />
       ) : (
@@ -265,55 +330,24 @@ export default function Platform() {
           </div>
         </>
       )}
-
-      {/*
-        Plan requests, above the seller list because they are a to-do rather
-        than a metric — the same reason the pending-applications banner sits
-        where it does. Hidden entirely when the queue is empty: an admin does
-        not need a heading telling them there is nothing to do.
-      */}
-      {planRequests.length > 0 ? (
-        <>
-          <SectionTitle>{t.plPlanRequests}</SectionTitle>
-          <div className="mb-4 grid gap-3">
-            {planRequests.map((row) => (
-              <article
-                key={row.id}
-                className="flex flex-wrap items-center gap-4 rounded-card border border-warn/30 bg-warn-bg/40 p-4"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold">{row.organiser.name}</p>
-                  <p className="truncate text-sm text-muted">
-                    {row.fromPlanLabel ?? "—"} → <span className="font-semibold text-ink">{row.planLabel}</span>
-                    {typeof row.rateBps === "number"
-                      ? ` · ${(row.rateBps / 100).toFixed(0)}%${
-                          row.monthlyCents > 0 ? ` + ${money(row.monthlyCents)} MAD` : ""
-                        }`
-                      : ""}
-                  </p>
-                  {row.note ? <p className="mt-1 text-xs italic text-muted">“{row.note}”</p> : null}
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <Button variant="ghost" onClick={() => decidePlan(row.id, false)}>
-                    {t.plDecline}
-                  </Button>
-                  <Button onClick={() => decidePlan(row.id, true)}>{t.plApprove}</Button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </>
+      </>
       ) : null}
 
+      {/* ── CLIENTS: money the platform owes a ticket BUYER ──────────────
+          A resale refund. The platform took the buyer's money and holds
+          the seller's, so this is paid by bank transfer to the seller's
+          own RIB -- nothing to do with an organiser's takings, which is
+          why it is no longer stacked above the seller table. */}
+      {tab === "clients" ? (
+      <>
       {/* Money owed to buyers, which nothing else on this console shows.
-          Above the payouts deliberately: an organiser being paid late is an
-          irritation, a buyer never refunded is a complaint.
 
           Always rendered, including when nothing is due. Hiding the whole
           section on an empty list meant "nobody is waiting for money" and
           "this console cannot show you that" looked identical — so someone
           looking for a resale seller's payout found no trace of the feature
-          and assumed it did not exist. */}
+          and assumed it did not exist. That is doubly true now it is a tab:
+          an empty tab with no words in it reads as broken. */}
       <SectionTitle>{t.plRefundsDue}</SectionTitle>
       {refunds.refunds.length === 0 ? (
         <p className="-mt-2 mb-4 text-sm text-muted">{t.plRefundsNone}</p>
@@ -406,6 +440,55 @@ export default function Platform() {
             </Field>
           </form>
         </Modal>
+      ) : null}
+      </>
+      ) : null}
+
+      {/* ── ORGANISATEURS: money the platform owes an event ORGANISER ────
+          Their takings less the Eventick fee, paid against the RIB on
+          their own Finance screen. A different pot and a different party
+          from the refunds above, which is exactly why they are no longer
+          on one page together. */}
+      {tab === "organisers" ? (
+      <>
+      {/*
+        Plan requests first: a to-do rather than a metric, the same reason
+        the pending-applications banner sits where it does. Hidden entirely
+        when the queue is empty — an admin does not need a heading telling
+        them there is nothing to do, and the tab's own badge already says
+        whether anything is waiting.
+      */}
+      {planRequests.length > 0 ? (
+        <>
+          <SectionTitle>{t.plPlanRequests}</SectionTitle>
+          <div className="mb-4 grid gap-3">
+            {planRequests.map((row) => (
+              <article
+                key={row.id}
+                className="flex flex-wrap items-center gap-4 rounded-card border border-warn/30 bg-warn-bg/40 p-4"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold">{row.organiser.name}</p>
+                  <p className="truncate text-sm text-muted">
+                    {row.fromPlanLabel ?? "—"} → <span className="font-semibold text-ink">{row.planLabel}</span>
+                    {typeof row.rateBps === "number"
+                      ? ` · ${(row.rateBps / 100).toFixed(0)}%${
+                          row.monthlyCents > 0 ? ` + ${money(row.monthlyCents)} MAD` : ""
+                        }`
+                      : ""}
+                  </p>
+                  {row.note ? <p className="mt-1 text-xs italic text-muted">“{row.note}”</p> : null}
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button variant="ghost" onClick={() => decidePlan(row.id, false)}>
+                    {t.plDecline}
+                  </Button>
+                  <Button onClick={() => decidePlan(row.id, true)}>{t.plApprove}</Button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
       ) : null}
 
       <SectionTitle>{t.plWhoSells}</SectionTitle>
@@ -537,7 +620,13 @@ export default function Platform() {
                 variant="ghost"
                 onClick={() => setRunning(seller)}
                 className="shrink-0"
-                disabled={!seller.owedCents}
+                // Also disabled with no RIB on file. The comment above
+                // already said the row "says to chase rather than offering
+                // a button that can only fail" -- but the badge was added
+                // and the button left live, so it still offered it. runPayout
+                // refuses an organiser with no account, so pressing it could
+                // only ever produce an error.
+                disabled={!seller.owedCents || !seller.hasBankAccount}
               >
                 {t.plRunPayout}
               </Button>
@@ -576,6 +665,8 @@ export default function Platform() {
             loadSellers();
           }}
         />
+      ) : null}
+      </>
       ) : null}
     </div>
   );
