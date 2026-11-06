@@ -11,6 +11,7 @@ import { isLockedGrant, isPermission, PERMISSION_KEYS, PERMISSIONS } from "../do
 import { invalidatePermissionCache, permissionListForRole } from "../lib/permissions.js";
 import { AUDIT_ACTIONS, recordAudit } from "../lib/audit.js";
 import { planRemoval, removeUser } from "../lib/user-admin.js";
+import { normaliseRib, ribOk } from "../domain/commission.js";
 
 export const authRouter = Router();
 
@@ -120,6 +121,91 @@ authRouter.patch(
     const body = updateMeSchema.parse(req.body);
     const user = await prisma.user.update({ where: { id: req.user!.id }, data: { name: body.name } });
     res.json({ user: publicUser(user, await permissionsOf(user)) });
+  }),
+);
+
+/*
+ * Where to send this person's money.
+ *
+ * Any signed-in user, not only an organiser. A resale seller is a CUSTOMER:
+ * the platform holds their money rather than CMI holding a card charge it
+ * can reverse, so paying them out is a bank transfer and needs an account.
+ * Without this the admin's refund queue listed a name and an amount and no
+ * way to pay it.
+ *
+ * The organiser form at PUT /organiser/bank-account still exists and writes
+ * the same row; it is the same account either way, so a user who is later
+ * made an organiser keeps the details they already gave.
+ */
+const bankSchema = z.object({
+  holderName: z.string().min(3),
+  /** Validated by ribOk below, so the error names the real problem. */
+  rib: z.string(),
+  bank: z.string().optional(),
+});
+
+authRouter.get(
+  "/me/bank",
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const account = await prisma.bankAccount.findUnique({
+      where: { userId: req.user!.id },
+      select: { holderName: true, rib: true, bank: true, updatedAt: true },
+    });
+    res.json({
+      bank: account
+        ? {
+            holderName: account.holderName,
+            // Last four only. The full RIB is a payment credential; echoing
+            // it into every page load buys nothing, since whoever set it
+            // typed it themselves.
+            ribLast4: account.rib.slice(-4),
+            bank: account.bank,
+            updatedAt: account.updatedAt.toISOString(),
+          }
+        : null,
+    });
+  }),
+);
+
+authRouter.put(
+  "/me/bank",
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const body = bankSchema.parse(req.body);
+    const rib = normaliseRib(body.rib);
+    if (!ribOk(rib)) throw new HttpError(400, "A Moroccan RIB is exactly 24 digits");
+
+    const saved = await prisma.bankAccount.upsert({
+      where: { userId: req.user!.id },
+      create: {
+        userId: req.user!.id,
+        holderName: body.holderName.trim(),
+        rib,
+        bank: body.bank?.trim() || null,
+      },
+      update: { holderName: body.holderName.trim(), rib, bank: body.bank?.trim() || null },
+      select: { holderName: true, rib: true, bank: true, updatedAt: true },
+    });
+
+    // Changing where money goes is the move an attacker makes after taking
+    // an account, so it is recorded -- last four digits only, never the RIB.
+    recordAudit(req, {
+      action: AUDIT_ACTIONS.BANK_ACCOUNT_CHANGED,
+      subjectType: "user",
+      subjectId: req.user!.id,
+      subjectLabel: req.user!.email,
+      details: { holderName: saved.holderName, ribLast4: saved.rib.slice(-4), bank: saved.bank },
+    });
+
+    res.json({
+      bank: {
+        holderName: saved.holderName,
+        ribLast4: saved.rib.slice(-4),
+        bank: saved.bank,
+        updatedAt: saved.updatedAt.toISOString(),
+      },
+    });
   }),
 );
 

@@ -898,11 +898,20 @@ model Plan {
   @@map("plans")
 }
 
-/// Where an organiser's money goes. Deliberately minimal: a name and an RIB,
+/// Where a user's money goes. Deliberately minimal: a name and an RIB,
 /// which is what a Moroccan bank transfer actually needs.
+///
+/// Held against ANY user, not only organisers. It started organiser-only,
+/// because an organiser payout was the only money the platform ever sent
+/// out. Resale broke that: the seller is a customer, their money is held by
+/// the platform rather than sitting on a card CMI can reverse, so paying
+/// them needs a transfer -- to an account there was no way to record. The
+/// admin's "refunds to send" queue showed an amount and a name and no
+/// account number, which made "Mark as sent" a button that could not have
+/// been telling the truth.
 model BankAccount {
-  id          String @id @default(cuid())
-  organiserId String @unique @map("organiser_id")
+  id     String @id @default(cuid())
+  userId String @unique @map("user_id")
 
   /// Account holder as the bank has it, which is often the trading name
   /// rather than the person who signed up.
@@ -914,7 +923,7 @@ model BankAccount {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  organiser User @relation(fields: [organiserId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("bank_accounts")
 }

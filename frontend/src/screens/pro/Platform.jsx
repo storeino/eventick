@@ -340,9 +340,29 @@ export default function Platform() {
                   <p className="mt-1 font-mono text-xs text-muted">
                     {row.gatewayRef ?? t.plRefundNoGatewayRef}
                   </p>
+                  {/* Where to send it, when there is no card charge to
+                      reverse. A resale payout is money the platform holds,
+                      so it leaves by bank transfer -- and this row used to
+                      show a name and an amount and no account number, which
+                      is why "Mark as sent" could be pressed for a payment
+                      nobody was able to make. */}
+                  {row.gatewayRef ? null : row.bank ? (
+                    <p className="mt-1 font-mono text-xs text-ink">
+                      {row.bank.holderName} · {row.bank.rib}
+                      {row.bank.bank ? ` · ${row.bank.bank}` : ""}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs font-semibold text-danger">
+                      {row.isGuest ? t.plRefundGuestNoBank : t.plRefundNoBank}
+                    </p>
+                  )}
                 </div>
                 <Button
                   className="shrink-0"
+                  // Nothing to pay into means nothing to record. The server
+                  // refuses this too; disabling it here just stops the click
+                  // that can only end in an error.
+                  disabled={!row.gatewayRef && !row.bank}
                   onClick={() => {
                     setRefundRow(row);
                     // Prefilled: the gateway reference is what the person in

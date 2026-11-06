@@ -104,7 +104,20 @@ async function teardown() {
   const buyers = await prisma.user.deleteMany({
     where: { email: { startsWith: "resale-payout-buyer-" } },
   });
-  return { events: stale.length, buyers: buyers.count };
+  /*
+   * Put the seller's bank details back to nothing.
+   *
+   * The seller is the real demo account, not a throwaway, so the RIB this
+   * suite saves survives into the next run -- and the "listing is refused
+   * without a bank account" check then passes against an account that HAS
+   * one, which is a check that cannot fail and therefore tests nothing.
+   * Cleared at both ends, so the state is the same however the last run
+   * ended.
+   */
+  const bank = await prisma.bankAccount.deleteMany({
+    where: { user: { email: ACCOUNTS.seller.email } },
+  });
+  return { events: stale.length, buyers: buyers.count, bank: bank.count };
 }
 
 /** A throwaway published event with resale ENABLED — it is opt-in per event. */
@@ -220,6 +233,42 @@ async function main() {
       data: { priceCents: FACE + 10000 },
     });
 
+    /*
+     * No bank account, no listing.
+     *
+     * A resale payout is money the platform holds, so it goes out as a bank
+     * transfer -- and nothing used to collect an account to send it to. The
+     * admin's queue listed a name and an amount it could not pay, and the
+     * seller's own page told them money was on its way to nowhere. Refused
+     * here, while the seller is present and can fix it, rather than weeks
+     * later with the seat sold and the money taken.
+     */
+    const noBank = await call("POST", "/api/resale/listings", {
+      token: seller,
+      body: { ticketId: sellerTicket.id },
+    });
+    check(
+      "listing is refused while the seller has no bank account",
+      noBank.status === 409,
+      `${noBank.status} ${noBank.data?.error ?? ""}`,
+    );
+    check(
+      "and the refusal says what to do about it",
+      /bank details/i.test(noBank.data?.error ?? ""),
+      noBank.data?.error,
+    );
+
+    const savedBank = await call("PUT", "/api/auth/me/bank", {
+      token: seller,
+      body: { holderName: "Resale Seller", rib: "011519000012345678905678", bank: "CIH" },
+    });
+    check("the seller can record a RIB on their own account", savedBank.status === 200, `${savedBank.status}`);
+    check(
+      "and only its last four digits come back",
+      savedBank.data?.bank?.ribLast4 === "5678" && !JSON.stringify(savedBank.data).includes("011519000012345678905678"),
+      JSON.stringify(savedBank.data?.bank),
+    );
+
     const listed = await call("POST", "/api/resale/listings", {
       token: seller,
       body: { ticketId: sellerTicket.id },
@@ -305,6 +354,19 @@ async function main() {
     check("the payout appears in the admin's pending queue", pending.status === 200);
     const row = pending.data?.refunds?.find((r) => r.orderId === sellerOrderId);
     check("the seller's payout is listed for an admin to action", Boolean(row), row ? `${mad(row.amountCents)} MAD` : "absent");
+    /*
+     * The queue has to say WHERE to send it. An amount and a name is not a
+     * payment instruction, and that is exactly what this row used to be:
+     * the admin could press "Mark as sent" and had no account to send to.
+     * Full RIB here deliberately -- the route is behind finance.refund, and
+     * a transfer cannot be made from the last four digits.
+     */
+    check(
+      "the queue carries the seller's bank details, so the transfer can actually be made",
+      row?.bank?.rib === "011519000012345678905678",
+      row?.bank ? `${row.bank.holderName} · ${row.bank.rib}` : "no bank on the row",
+    );
+    check("and names the account holder", row?.bank?.holderName === "Resale Seller", row?.bank?.holderName);
 
     // ────────────────────────────────────────────── the admin pays out ──
     section("PAYOUT  an admin reverses it and records the reference");

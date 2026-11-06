@@ -94,7 +94,20 @@ export default function TicketDetail() {
       await copyResale(res.token);
       load();
     } catch (err) {
-      toast.error(err.message);
+      /*
+       * Listing is refused when there is no account to pay the seller into.
+       * The server says why; a message alone still leaves them hunting for
+       * the form, so this offers the way there. The money half of a resale
+       * is the half that fails silently, which is why the check happens at
+       * listing time and not when the payout is already owed.
+       */
+      if (err.status === 409 && /bank details/i.test(err.message ?? "")) {
+        toast.error(err.message, {
+          action: { label: t("cbSave"), onClick: () => navigate("/billets") },
+        });
+      } else {
+        toast.error(err.message);
+      }
     } finally {
       setBusy(false);
     }

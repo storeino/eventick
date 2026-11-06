@@ -553,6 +553,19 @@ async function main() {
   // ─────────────────────────────────────────────────────────── resale ──
   setGroup("RESALE  /api/resale/*");
   {
+    /*
+     * Listing now requires somewhere to pay the seller: a resale payout is
+     * money the platform holds, so it leaves by bank transfer rather than a
+     * card reversal. This suite is about the resale ENDPOINTS, not that
+     * rule, so it satisfies the precondition up front -- the rule itself is
+     * covered in live-resale-payout-test.mjs, which also clears this
+     * account's RIB on teardown.
+     */
+    await expectStatus("(setup) the seller has somewhere to be paid", "PUT", "/api/auth/me/bank", 200, {
+      token: tokens.customer,
+      body: { holderName: "Vendeur Test", rib: "011519000012345678901111", bank: "CIH" },
+    });
+
     const { slug, event } = await makeEvent(tokens.organiser, `resale${Date.now()}`, [tierBody({ capacity: 5 })]);
     slugs.push(slug);
     const tierId = event.tiers[0].id;

@@ -683,6 +683,23 @@ platformRouter.get(
         holderName: true,
         email: true,
         event: { select: { slug: true, titleFr: true, titleAr: true } },
+        /*
+         * Who to pay, and where.
+         *
+         * A card refund does not need this -- CMI reverses onto the card it
+         * charged. A RESALE does: the platform holds the seller's money, so
+         * it goes out as a bank transfer, and without an account on file
+         * "Mark as sent" claims a payment nobody could have made.
+         *
+         * customer is null on a guest order; there is then no account to
+         * read and the queue says so rather than showing a blank.
+         */
+        customer: {
+          select: {
+            id: true,
+            bankAccount: { select: { holderName: true, rib: true, bank: true } },
+          },
+        },
       },
       orderBy: { refundedAt: "asc" },
     });
@@ -700,6 +717,22 @@ platformRouter.get(
         eventSlug: o.event.slug,
         eventTitleFr: o.event.titleFr,
         eventTitleAr: o.event.titleAr,
+        /*
+         * Full RIB, like the payout queue above and for the same reason:
+         * this route is behind finance.refund, and a transfer cannot be made
+         * from the last four digits. Null means there is nothing on file --
+         * the screen has to say so, because that is a refund that cannot be
+         * paid yet, not one that is merely waiting.
+         */
+        bank: o.customer?.bankAccount
+          ? {
+              holderName: o.customer.bankAccount.holderName,
+              rib: o.customer.bankAccount.rib,
+              bank: o.customer.bankAccount.bank,
+            }
+          : null,
+        /** A guest order has no account to attach a RIB to at all. */
+        isGuest: !o.customer,
       })),
       totalCents: orders.reduce((sum, o) => sum + o.refundedCents, 0),
     });
@@ -736,9 +769,13 @@ platformRouter.post(
         id: true,
         refundedCents: true,
         refundPaidAt: true,
+        /** Present when CMI holds the original charge: reversed onto the card,
+         * so no bank account is needed. Absent on a resale payout. */
+        gatewayRef: true,
         holderName: true,
         email: true,
         event: { select: { titleFr: true } },
+        customer: { select: { bankAccount: { select: { rib: true } } } },
       },
     });
     if (!order) throw new HttpError(404, "Order not found");
@@ -746,6 +783,28 @@ platformRouter.post(
     // Guarded rather than overwritten: marking it twice would hide whichever
     // reference was recorded first, and that is the one someone reconciled.
     if (order.refundPaidAt) throw new HttpError(409, "This refund is already marked as sent");
+
+    /*
+     * Refuse to record a transfer to an account that does not exist.
+     *
+     * This is the whole point of the change. The button said "Mark as sent"
+     * and the queue showed a name and an amount and no account number, so
+     * the one thing it recorded -- that the seller had been paid -- was the
+     * one thing nobody could have done. The seller's Billets page then went
+     * green and told them to go and look at a bank account the money was
+     * never sent to.
+     *
+     * A card reversal is exempt: gatewayRef means CMI holds the original
+     * charge and reverses it onto the card it came from, which needs no RIB.
+     * It is the resale payout -- money the platform holds -- that has
+     * nowhere to go without one.
+     */
+    if (!order.gatewayRef && !order.customer?.bankAccount) {
+      throw new HttpError(
+        409,
+        "No bank account on file for this seller, so there is nowhere to send the money. Ask them to add their RIB in their account first.",
+      );
+    }
 
     const updated = await prisma.order.update({
       where: { id },

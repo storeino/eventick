@@ -126,7 +126,7 @@ export async function removeUser(userId: string): Promise<{ mode: RemovalMode; e
     });
     // The bank account is the one thing with no reason to survive: it is
     // personal, and a payout already made recorded its own copy.
-    await tx.bankAccount.deleteMany({ where: { organiserId: userId } });
+    await tx.bankAccount.deleteMany({ where: { userId } });
   });
 
   logger.info({ userId, was: user.email }, "user anonymised (financial history retained)");

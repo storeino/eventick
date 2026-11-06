@@ -1513,9 +1513,9 @@ organiserRouter.put(
     if (!ribOk(rib)) throw new HttpError(400, "A Moroccan RIB is exactly 24 digits");
 
     const saved = await prisma.bankAccount.upsert({
-      where: { organiserId: req.user!.id },
+      where: { userId: req.user!.id },
       create: {
-        organiserId: req.user!.id,
+        userId: req.user!.id,
         holderName: body.holderName.trim(),
         rib,
         bank: body.bank?.trim() || null,

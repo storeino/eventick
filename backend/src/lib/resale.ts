@@ -100,6 +100,37 @@ export async function listTicketForResale(ticketId: string, sellerId: string | n
     throw new HttpError(409, "This ticket has no refundable value to resell");
   }
 
+  /*
+   * No account to pay into, no listing.
+   *
+   * The seller's money does not come back the way it went out. A card refund
+   * is reversed by CMI onto the original card; a resale payout is money the
+   * PLATFORM holds, so it leaves as a bank transfer and needs an account
+   * number that nothing in the flow used to ask for. The result was a queue
+   * of refunds the admin could see, name and total, and not pay.
+   *
+   * Refused at listing time rather than at payout time on purpose. This is
+   * the one moment the seller is present, motivated and able to fix it. The
+   * alternative is selling a stranger a seat and discovering weeks later,
+   * with the event over and the money taken, that there is nowhere to send
+   * it -- which is a promise the platform should not make in the first place.
+   *
+   * A guest seller (sellerId null) is exempt because there is no account to
+   * hold a RIB on; those are chased by email, as they always were.
+   */
+  if (sellerId) {
+    const account = await prisma.bankAccount.findUnique({
+      where: { userId: sellerId },
+      select: { id: true },
+    });
+    if (!account) {
+      throw new HttpError(
+        409,
+        "Add your bank details before listing a ticket — that is where the money goes when it sells.",
+      );
+    }
+  }
+
   // One live listing per ticket. A previous CANCELLED listing may be replaced;
   // the unique constraint is on ticketId, so reuse the row rather than insert.
   if (ticket.resale) {

@@ -221,10 +221,10 @@ async function main() {
      * restores it if someone has edited it while clicking around.
      */
     await prisma.bankAccount.upsert({
-      where: { organiserId: demoOrganiser.id },
+      where: { userId: demoOrganiser.id },
       update: { holderName: "Yasmine Organisatrice", rib: "011519000012345678901234", bank: "Attijariwafa Bank" },
       create: {
-        organiserId: demoOrganiser.id,
+        userId: demoOrganiser.id,
         holderName: "Yasmine Organisatrice",
         rib: "011519000012345678901234",
         bank: "Attijariwafa Bank",

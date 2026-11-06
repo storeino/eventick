@@ -202,7 +202,7 @@ async function teardown(organiserId) {
   await prisma.subscriptionCharge.deleteMany({ where: { organiserId } });
   await prisma.payoutOrder.deleteMany({ where: { payout: { organiserId } } });
   await prisma.payout.deleteMany({ where: { organiserId } });
-  await prisma.bankAccount.deleteMany({ where: { organiserId } });
+  await prisma.bankAccount.deleteMany({ where: { userId: organiserId } });
   await prisma.user.update({ where: { id: organiserId }, data: { planId: null } });
 
   const stale = await prisma.event.findMany({ where: { slug: { startsWith: "op-" } }, select: { id: true } });
@@ -490,7 +490,7 @@ async function main() {
   // ═══ 7. Bank details ══════════════════════════════════════════════════
   section("7. Bank details");
   {
-    await prisma.bankAccount.deleteMany({ where: { organiserId: orgaId } });
+    await prisma.bankAccount.deleteMany({ where: { userId: orgaId } });
     const short = await call("PUT", "/api/organiser/bank-account", {
       token: orga,
       body: { holderName: "Yasmine Organisatrice", rib: "123" },

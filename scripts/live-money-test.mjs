@@ -108,7 +108,7 @@ async function teardown() {
     await prisma.subscriptionCharge.deleteMany({ where: { organiserId: orga.id } });
     await prisma.payoutOrder.deleteMany({ where: { payout: { organiserId: orga.id } } });
     await prisma.payout.deleteMany({ where: { organiserId: orga.id } });
-    await prisma.bankAccount.deleteMany({ where: { organiserId: orga.id } });
+    await prisma.bankAccount.deleteMany({ where: { userId: orga.id } });
     await prisma.user.update({ where: { id: orga.id }, data: { planId: null } });
   }
 
@@ -456,7 +456,7 @@ async function main() {
   // ── Bank details gate the payout ────────────────────────────────────────
   console.log("\n\x1b[1mA payout needs somewhere to send it\x1b[0m");
   {
-    await prisma.bankAccount.deleteMany({ where: { organiserId: orgaId } });
+    await prisma.bankAccount.deleteMany({ where: { userId: orgaId } });
     const noBank = await call("POST", `/api/platform/organisers/${orgaId}/payouts`, {
       token: admin,
       body: { periodStart: thisMonthStart, periodEnd: tomorrow },

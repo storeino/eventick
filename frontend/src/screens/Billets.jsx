@@ -14,6 +14,119 @@ import { Button, EmptyState, Field, Input, Modal } from "../ui";
 import { useI18n } from "../i18n";
 import { daysUntil, eventText, longDate, todayKey } from "../utils";
 
+/**
+ * Where a customer's resale money goes.
+ *
+ * A refund onto a card needs nothing from the buyer -- CMI reverses the
+ * charge it made. Reselling is the other case: the platform holds the
+ * seller's money, so paying them is a bank transfer, and nothing used to
+ * ask for an account to transfer to. The admin's refund queue showed a
+ * name and an amount and no RIB, which made its "Mark as sent" button a
+ * claim nobody could act on.
+ *
+ * Deliberately on the buyer's own page rather than buried in settings: it
+ * is the same screen that shows them a pending payout, so the answer to
+ * "where is my money" sits next to the question.
+ */
+function ClientBankCard({ onFile, setOnFile }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [holderName, setHolderName] = useState("");
+  const [bank, setBank] = useState("");
+  const [rib, setRib] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // Prefill from what is saved, so correcting a misspelled holder name does
+  // not mean retyping it. The RIB is NOT prefilled -- the server returns
+  // only its last four digits, and the hint below says so.
+  useEffect(() => {
+    setHolderName(onFile?.holderName ?? "");
+    setBank(onFile?.bank ?? "");
+  }, [onFile?.holderName, onFile?.bank]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    const digits = rib.replace(/[s-]/g, "");
+    if (!/^d{24}$/.test(digits)) {
+      setError(t("cbBadRib"));
+      return;
+    }
+    setError("");
+    setBusy(true);
+    try {
+      const data = await api.put("/auth/me/bank", { holderName: holderName.trim(), rib: digits, bank: bank.trim() });
+      setOnFile(data.bank);
+      setRib("");
+      setOpen(false);
+      toast.success(t("cbSaved"));
+    } catch (err) {
+      toast.error(err.message || t("cbBadRib"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <article className="rounded-card border border-line/10 bg-card p-4 shadow-card">
+      <h2 className="font-display text-xl font-bold">{t("cbTitle")}</h2>
+      <p className="mt-1 text-xs text-muted">{t("cbSub")}</p>
+
+      <p className="mt-3 text-sm">
+        {onFile ? (
+          <span className="font-semibold text-success">
+            {t("cbOnFile")} · {onFile.holderName} · **** {onFile.ribLast4}
+            {onFile.bank ? ` · ${onFile.bank}` : ""}
+          </span>
+        ) : (
+          <span className="font-semibold text-danger">{t("cbMissing")}</span>
+        )}
+      </p>
+
+      {open ? (
+        <form onSubmit={submit} className="mt-4 grid gap-3">
+          <Field label={t("cbHolder")} required>
+            {(props) => <Input {...props} value={holderName} onChange={(e) => setHolderName(e.target.value)} autoComplete="name" />}
+          </Field>
+          <Field label={t("cbBank")}>
+            {(props) => <Input {...props} value={bank} onChange={(e) => setBank(e.target.value)} placeholder="CIH, Attijariwafa…" />}
+          </Field>
+          <Field label={t("cbRib")} error={error} required hint={onFile ? t("cbRibRetype") : undefined}>
+            {(props) => (
+              <Input
+                {...props}
+                value={rib}
+                onChange={(e) => setRib(e.target.value)}
+                inputMode="numeric"
+                placeholder="1234 5678 9012 3456 7890 1234"
+                // A payment credential: keep it out of autofill stores.
+                autoComplete="off"
+              />
+            )}
+          </Field>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={busy || holderName.trim().length < 3 || !rib} className="flex-1">
+              {t("cbSave")}
+            </Button>
+            <button
+              type="button"
+              className="h-11 rounded-full border border-line/20 bg-card px-4 text-sm font-semibold transition hover:bg-paper"
+              onClick={() => setOpen(false)}
+            >
+              {t("cancel")}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button type="button" className="mt-3 text-sm font-semibold text-primary" onClick={() => setOpen(true)}>
+          {onFile ? t("edit") : t("cbSave")}
+        </button>
+      )}
+    </article>
+  );
+}
+
 function BilletsInner() {
   const { locale, t, tf } = useI18n();
   const navigate = useNavigate();
@@ -25,6 +138,16 @@ function BilletsInner() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(user?.name ?? "");
   const [transferId, setTransferId] = useState(null);
+  /* Whether this person has somewhere to be paid. Held here rather than in
+     ClientBankCard because the history rows need the same answer: a payout
+     that is waiting on a missing RIB is waiting on the reader, and saying
+     only "on its way" would be telling them to sit and wait for something
+     that cannot move until they act. null = not loaded yet. */
+  const [bankOnFile, setBankOnFile] = useState(null);
+  /* Separate from bankOnFile, which is null both before the fetch answers
+     and when there is genuinely no account: without this the "add your RIB"
+     warning flashes on every load before the answer arrives. */
+  const [bankLoaded, setBankLoaded] = useState(false);
   const [friend, setFriend] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -32,6 +155,13 @@ function BilletsInner() {
 
   useEffect(() => {
     loadOrders();
+    api
+      .get("/auth/me/bank")
+      .then((data) => setBankOnFile(data.bank))
+      // A failure must not blank the page; "no RIB" is also the safe thing
+      // to show, since it prompts rather than reassures.
+      .catch(() => setBankOnFile(null))
+      .finally(() => setBankLoaded(true));
   }, []);
 
   const today = todayKey();
@@ -250,12 +380,23 @@ function BilletsInner() {
                           went out. Saying "remboursé" at the decision is what
                           sent sellers to their bank to find nothing there. */}
                       {order.refundedCents > 0 ? (
-                        <p className={`mt-1 text-xs ${order.refundPaidAt ? "text-success" : "text-muted"}`}>
-                          {(order.refundPaidAt ? t("payoutSent") : t("payoutPending")).replace(
-                            "{n}",
-                            money(order.refundedCents),
-                          )}
-                        </p>
+                        <>
+                          <p className={`mt-1 text-xs ${order.refundPaidAt ? "text-success" : "text-muted"}`}>
+                            {(order.refundPaidAt ? t("payoutSent") : t("payoutPending")).replace(
+                              "{n}",
+                              money(order.refundedCents),
+                            )}
+                          </p>
+                          {/* A payout still waiting, with no account to pay
+                              into, is waiting on the reader -- so say so
+                              instead of leaving them to wait for a transfer
+                              that cannot be made. Only once the fetch has
+                              answered (null means not loaded), and never
+                              after the money has gone out. */}
+                          {!order.refundPaidAt && bankOnFile === null && bankLoaded ? (
+                            <p className="mt-1 text-xs font-semibold text-danger">{t("payoutNoBank")}</p>
+                          ) : null}
+                        </>
                       ) : null}
                     </td>
                   </tr>
@@ -288,9 +429,12 @@ function BilletsInner() {
           </div>
         ) : null}
 
-        {/* Two columns for a buyer (receipt + profile), one for staff: the
-            last transaction is a purchase receipt, so for an account that
-            never buys it is a card that exists only to say "nothing here". */}
+        {/* Three cards for a buyer (receipt + profile + payout account), one
+            for staff: the last transaction is a purchase receipt, so for an
+            account that never buys it is a card that exists only to say
+            "nothing here", and staff are paid through Finance, not here.
+            Two columns rather than three, so none of them gets squeezed
+            into a sliver on a laptop; the third wraps underneath. */}
         <section className={`mt-8 grid gap-4 ${canUsePro ? "" : "lg:grid-cols-2"}`}>
           {canUsePro ? null : (
           <article className="rounded-card border border-line/10 bg-card p-4 shadow-card">
@@ -352,6 +496,9 @@ function BilletsInner() {
               </button>
             )}
           </article>
+          {/* Staff do not resell tickets; an organiser's payout account
+              lives on the Finance screen instead. */}
+          {canUsePro ? null : <ClientBankCard onFile={bankOnFile} setOnFile={setBankOnFile} />}
         </section>
       </div>
 
