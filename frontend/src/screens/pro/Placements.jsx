@@ -294,8 +294,7 @@ export default function Placements() {
                 labels={{ pick: t.pickEvent, search: t.searchEvents, noMatch: t.noNavResults }}
               />
             ) : null}
-            <Btn onClick={openNew} disabled={!slug}>
-              <Plus className="size-4" />
+            <Btn onClick={openNew} disabled={!slug} icon={<Plus className="size-4" />}>
               {t.addZone}
             </Btn>
           </>

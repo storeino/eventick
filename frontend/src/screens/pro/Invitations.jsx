@@ -200,8 +200,7 @@ export default function Invitations() {
                 labels={{ pick: t.pickEvent, search: t.searchEvents, noMatch: t.noNavResults }}
               />
             ) : null}
-            <Btn onClick={openForm} disabled={!slug || tiers.length === 0}>
-              <MailPlus className="size-4" />
+            <Btn onClick={openForm} disabled={!slug || tiers.length === 0} icon={<MailPlus className="size-4" />}>
               {t.issueComps}
             </Btn>
           </>
@@ -377,8 +376,7 @@ export default function Invitations() {
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <Btn type="button" variant="secondary" onClick={addGuest} disabled={guests.length >= MAX_GUESTS}>
-              <Plus className="size-4" />
+            <Btn type="button" variant="secondary" onClick={addGuest} disabled={guests.length >= MAX_GUESTS} icon={<Plus className="size-4" />}>
               {t.addGuest}
             </Btn>
             {guests.length >= MAX_GUESTS ? <p className="text-xs text-muted">{t.compsMax}</p> : null}

@@ -90,8 +90,7 @@ export default function Offers() {
         title={t.offers}
         sub={t.offersSub}
         actions={
-          <Btn onClick={() => setOpen(true)}>
-            <Plus className="size-4" />
+          <Btn onClick={() => setOpen(true)} icon={<Plus className="size-4" />}>
             {t.addPromo}
           </Btn>
         }

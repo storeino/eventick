@@ -199,8 +199,7 @@ export default function Orders() {
           setStatus("");
         }}
         actions={
-          <Btn variant="secondary" size="sm" disabled={allRows.length === 0} onClick={exportCsv}>
-            <Download className="size-4" />
+          <Btn variant="secondary" size="sm" disabled={allRows.length === 0} onClick={exportCsv} icon={<Download className="size-4" />}>
             {t.export}
           </Btn>
         }

@@ -364,16 +364,26 @@ export function Pager({ page, pages, onPage, limit, onLimit, labels }) {
       )}
       {pages > 1 ? (
         <div className="ms-auto flex items-center gap-4">
-          <Btn variant="secondary" size="sm" disabled={page <= 1} onClick={() => onPage(Math.max(1, page - 1))}>
-            <ChevronLeft className="size-4 rtl:rotate-180" />
+          <Btn
+            variant="secondary"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => onPage(Math.max(1, page - 1))}
+            icon={<ChevronLeft className="size-4 rtl:rotate-180" />}
+          >
             {labels.prev}
           </Btn>
           <span className="min-w-[90px] text-center text-xs text-muted">
             {page} / {pages}
           </span>
-          <Btn variant="secondary" size="sm" disabled={page >= pages} onClick={() => onPage(Math.min(pages, page + 1))}>
+          <Btn
+            variant="secondary"
+            size="sm"
+            disabled={page >= pages}
+            onClick={() => onPage(Math.min(pages, page + 1))}
+            iconEnd={<ChevronRight className="size-4 rtl:rotate-180" />}
+          >
             {labels.next}
-            <ChevronRight className="size-4 rtl:rotate-180" />
           </Btn>
         </div>
       ) : null}

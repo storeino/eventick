@@ -269,8 +269,7 @@ export default function Gate() {
             />
           </span>
           {queued > 0 && online ? (
-            <Btn variant="secondary" size="sm" onClick={flush}>
-              <Download className="size-4" />
+            <Btn variant="secondary" size="sm" onClick={flush} icon={<Download className="size-4" />}>
               {t.syncNow}
             </Btn>
           ) : null}
