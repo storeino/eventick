@@ -147,8 +147,24 @@ export default function Home() {
           so the header is 64px or 100px depending on the data — with a
           fixed -mt-16/pt-16 the hero's kicker and headline rode up under
           the bar whenever the ticker was showing. See --site-header-h. */}
+      {/*
+        No max-height.
+
+        It used to carry max-h-[92vh], to keep the first event card near the
+        fold. But a max-height on a flex column does not shrink the content
+        inside it -- it just stops the box growing, and everything past the
+        ceiling spills out. On a short or narrow viewport the headline wraps
+        to three lines and the trend pills to two rows, which is ~95px more
+        than 92vh of a 640px-tall window: the stats row and the heading of
+        the section below were drawn on top of each other.
+
+        min-height still does the job the cap was really for. It holds the
+        hero open on a tall desktop screen so it reads as a full stage, and
+        on a small screen the section is now free to be as tall as its own
+        contents, which is the only height at which nothing overlaps.
+      */}
       <section
-        className="relative flex max-h-[92vh] min-h-[min(62vh,38rem)] flex-col bg-stage text-stage-fg"
+        className="relative flex min-h-[min(62vh,38rem)] flex-col bg-stage text-stage-fg"
         style={{ marginTop: "calc(var(--site-header-h) * -1)", paddingTop: "var(--site-header-h)" }}
       >
         {/*
@@ -298,12 +314,13 @@ export default function Home() {
       {/*
         Breathing room between the hero and whatever section follows it.
 
-        It has to live OUT HERE, as its own element, not as padding on the
-        stats row above. The hero is capped at max-h-[92vh]: padding added
-        inside it is absorbed by that ceiling, so the section's bottom edge
-        does not move and the next background still starts hard against the
-        stat labels. pb-7 -> pb-10 -> pb-16 on the dl all rendered
-        identically for exactly that reason.
+        It lives OUT HERE, as its own element, rather than as padding on
+        the stats row above. That began as a workaround for the hero's
+        max-h-[92vh] -- padding added inside the cap was absorbed by it, so
+        pb-7 -> pb-10 -> pb-16 on the dl all rendered identically. The cap
+        is gone now (see the note on the section), but the spacer stays its
+        own element: it is a gap between two sections, so it belongs
+        between them rather than hidden inside one of their paddings.
 
         bg-stage so it continues the hero's own surface rather than showing
         the page background through the gap, which would just move the seam
@@ -578,11 +595,19 @@ function HeroStat({ icon, value, label }) {
   // the poster rather than another card, but an icon chip and bigger type
   // give each number the weight the surrounding empty space was asking for.
   return (
-    <div className="flex items-center gap-3 px-4 first:ps-0 last:pe-0 sm:gap-4">
-      <span className="flex size-11 shrink-0 items-center justify-center rounded-control bg-stage-fg/10 text-accent">{icon}</span>
+    /* Stacked on a phone, side by side from sm up.
+       Three columns across a 360px screen leaves ~109px each, and the
+       widest stat (a 44px icon chip, a gap, and "133,294" over "Seats
+       available") needs ~147px beside each other -- so the label truncated
+       to "Seats ..." on every phone. Stacking gives the text the whole
+       column instead of what is left after the icon. */
+    <div className="flex flex-col items-start gap-1.5 px-2 first:ps-0 last:pe-0 sm:flex-row sm:items-center sm:gap-4 sm:px-4">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-control bg-stage-fg/10 text-accent sm:size-11">{icon}</span>
       <div className="min-w-0">
-        <dd className="font-display text-2xl font-extrabold tabular-nums sm:text-3xl md:text-4xl">{value}</dd>
-        <dt className="mt-0.5 truncate text-xs font-semibold text-stage-muted sm:text-sm">{label}</dt>
+        <dd className="font-display text-xl font-extrabold tabular-nums sm:text-3xl md:text-4xl">{value}</dd>
+        {/* No truncate: with the full column width there is room to wrap,
+            and a wrapped label is readable where a clipped one is not. */}
+        <dt className="mt-0.5 text-xs font-semibold text-stage-muted sm:text-sm">{label}</dt>
       </div>
     </div>
   );
