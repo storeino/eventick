@@ -141,7 +141,7 @@ export default function Offers() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {waitlist.map((item, i) => (
-            <article key={`${item.slug}-${item.email}-${i}`} className="flex flex-col gap-2.5 rounded-card border border-line/10 bg-card p-4 shadow-card">
+            <article key={`${item.slug}-${item.email}-${i}`} className="flex min-w-0 flex-col gap-2.5 rounded-card border border-line/10 bg-card p-4 shadow-card">
               <div className="flex items-start gap-2.5">
                 <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-control bg-brume text-primary" aria-hidden>
                   <Mail className="size-4" />

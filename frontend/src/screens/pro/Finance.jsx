@@ -315,7 +315,7 @@ export default function Finance() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {byEvent.map((row) => (
-            <article key={row.slug} className="flex items-center gap-3 rounded-card border border-line/10 bg-card p-4 shadow-card">
+            <article key={row.slug} className="flex min-w-0 items-center gap-3 rounded-card border border-line/10 bg-card p-4 shadow-card">
               <img src={row.image} alt="" className="size-12 shrink-0 rounded-control object-cover" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-bold">{row.title}</p>
