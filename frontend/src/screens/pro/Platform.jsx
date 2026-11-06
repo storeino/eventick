@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api, money } from "../../api";
 import { useI18n } from "../../i18n";
 import { cn, eventText } from "../../utils";
-import { Badge, Button, Field, Input, Modal, Select } from "../../ui";
+import { Badge, Button, Dropdown, Field, Input, Modal, triggerControlClass } from "../../ui";
 import { EmptyState, PageHead, SectionTitle, StatCard, StatSkeletons } from "./ui";
 import { text } from "./copy";
 
@@ -557,21 +557,31 @@ export default function Platform() {
               {/* Commission plan. The organiser sees this read-only on their
                   own Finance screen — assigning it is an admin act, because
                   an organiser choosing their own rate is the bug being fixed. */}
-              <label className="flex shrink-0 flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-muted">{t.plPlan}</span>
-                <Select
+              {/* Dropdown, not a native <select>: this row sits on the dark
+                  card chrome, and the browser's own popup ignores the theme
+                  entirely -- it opened as a plain light list with OS
+                  highlight colours in the middle of a dark console. */}
+              <span className="flex shrink-0 flex-col gap-1" style={{ width: 150 }}>
+                <span id={`plan-label-${seller.id}`} className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                  {t.plPlan}
+                </span>
+                <Dropdown
+                  // labelledBy rather than a <label>: the trigger is a
+                  // button, which a <label> does not forward clicks to.
+                  labelledBy={`plan-label-${seller.id}`}
+                  label={t.plPlan}
                   value={seller.plan ?? ""}
-                  onChange={(e) => assignPlan(seller.id, e.target.value)}
-                  style={{ width: 150 }}
-                >
-                  <option value="">{t.plPlanDefault}</option>
-                  {plans.map((plan) => (
-                    <option key={plan.key} value={plan.key}>
-                      {plan.label} · {plan.rateBps / 100}%
-                    </option>
-                  ))}
-                </Select>
-              </label>
+                  onChange={(planKey) => assignPlan(seller.id, planKey)}
+                  options={[
+                    { value: "", label: t.plPlanDefault },
+                    ...plans.map((plan) => ({
+                      value: plan.key,
+                      label: `${plan.label} · ${plan.rateBps / 100}%`,
+                    })),
+                  ]}
+                  triggerClassName={triggerControlClass({ className: "h-10 text-sm" })}
+                />
+              </span>
 
               <p className="shrink-0 text-end">
                 <span className="block font-display text-subhead font-bold tabular-nums">

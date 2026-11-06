@@ -3,7 +3,7 @@ import { ScrollText, ShieldAlert } from "lucide-react";
 import { api, money } from "../../api";
 import { useI18n } from "../../i18n";
 import { Btn, EmptyState, PageHead } from "./ui";
-import { Select } from "../../ui";
+import { Dropdown, triggerControlClass } from "../../ui";
 import { text } from "./copy";
 
 /**
@@ -120,17 +120,24 @@ export default function Journal() {
         title={t.journal}
         sub={t.journalSub}
         actions={
-          <label className="flex flex-col gap-1.5">
-            <span className="ps-0.5 text-[11px] font-bold uppercase tracking-wide text-muted">{t.journalAll}</span>
-            <Select value={action} onChange={(e) => setAction(e.target.value)} style={{ width: 220 }}>
-              <option value="">{t.journalAll}</option>
-              {actions.map((key) => (
-                <option key={key} value={key}>
-                  {labelFor(t, key)}
-                </option>
-              ))}
-            </Select>
-          </label>
+          /* Dropdown, not a native <select>: the browser's popup ignores
+             the app's theme and opens as a light list over dark chrome. */
+          <span className="flex flex-col gap-1.5" style={{ width: 220 }}>
+            <span id="journal-action-label" className="ps-0.5 text-[11px] font-bold uppercase tracking-wide text-muted">
+              {t.journalAll}
+            </span>
+            <Dropdown
+              labelledBy="journal-action-label"
+              label={t.journalAll}
+              value={action}
+              onChange={setAction}
+              options={[
+                { value: "", label: t.journalAll },
+                ...actions.map((key) => ({ value: key, label: labelFor(t, key) })),
+              ]}
+              triggerClassName={triggerControlClass({})}
+            />
+          </span>
         }
       />
 

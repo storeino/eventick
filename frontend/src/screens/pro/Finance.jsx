@@ -5,7 +5,7 @@ import { api, money } from "../../api";
 import { useI18n } from "../../i18n";
 import { useOrganisers } from "./useOrganisers";
 import { Card, EmptyState, PageHead, SectionTitle, StatCard, StatSkeletons } from "./ui";
-import { Button, Field, Input, PeriodPicker, RevenueBars, Select, deltaPct } from "../../ui";
+import { Button, Dropdown, Field, Input, PeriodPicker, RevenueBars, deltaPct, triggerControlClass } from "../../ui";
 import { cn, eventText, intlLocaleTag } from "../../utils";
 import { text } from "./copy";
 
@@ -180,17 +180,24 @@ export default function Finance() {
         sub={t.financeSub}
         actions={
           maySeeAllOrganisers ? (
-            <label className="flex flex-col gap-1.5">
-              <span className="ps-0.5 text-[11px] font-bold uppercase tracking-wide text-muted">{t.allOrganisers}</span>
-              <Select value={organiserId} onChange={(e) => setOrganiserId(e.target.value)} style={{ width: 200 }}>
-                <option value="">{t.allOrganisers}</option>
-                {organisers.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </Select>
-            </label>
+            /* Dropdown, not a native <select>: the browser's popup ignores
+               the app's theme and opens as a light list over dark chrome. */
+            <span className="flex flex-col gap-1.5" style={{ width: 200 }}>
+              <span id="fin-organiser-label" className="ps-0.5 text-[11px] font-bold uppercase tracking-wide text-muted">
+                {t.allOrganisers}
+              </span>
+              <Dropdown
+                labelledBy="fin-organiser-label"
+                label={t.allOrganisers}
+                value={organiserId}
+                onChange={setOrganiserId}
+                options={[
+                  { value: "", label: t.allOrganisers },
+                  ...organisers.map((o) => ({ value: o.id, label: o.name })),
+                ]}
+                triggerClassName={triggerControlClass({})}
+              />
+            </span>
           ) : null
         }
       />
