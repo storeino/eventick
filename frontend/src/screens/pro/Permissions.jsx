@@ -110,11 +110,13 @@ export default function Permissions() {
         {(data?.permissions ?? []).map((perm) => (
           <article
             key={perm.key}
-            className="rounded-card border border-line/10 bg-card p-4 shadow-card sm:flex sm:items-center sm:gap-4"
+            className="min-w-0 rounded-card border border-line/10 bg-card p-4 shadow-card sm:flex sm:items-center sm:gap-4"
           >
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <code className="font-mono text-sm font-extrabold text-ink">{perm.key}</code>
+                {/* break-all: "gate.checkin" is one token to a browser,
+                    and on a narrow card it would otherwise set the floor. */}
+                <code className="break-all font-mono text-sm font-extrabold text-ink">{perm.key}</code>
                 {perm.key === DANGEROUS ? (
                   <Badge tone="warn" icon={<AlertTriangle className="size-3" />}>
                     {t.permScopeWarn}
@@ -124,10 +126,16 @@ export default function Permissions() {
               <p className="mt-1 text-sm text-muted">{perm.description}</p>
             </div>
 
+            {/* No shrink-0 here: it contradicted the flex-wrap beside it.
+                shrink-0 holds this group at its max-content width -- all
+                three pills on one line, ~288px -- so it never wrapped, and
+                the card could not be narrower than ~437px however small the
+                screen got. Without it the group narrows and the pills wrap,
+                which is what flex-wrap was there for. */}
             <div
               role="group"
               aria-label={`${perm.key} — ${t.roleField}`}
-              className="mt-3 flex shrink-0 flex-wrap gap-2 sm:mt-0"
+              className="mt-3 flex flex-wrap gap-2 sm:mt-0"
             >
               {ROLES.map((role) => {
                 const held = (data?.roles?.[role] ?? []).includes(perm.key);
