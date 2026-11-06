@@ -91,16 +91,27 @@ const TONES = {
   accent: "bg-accent text-accent-fg",
 };
 
-export function Badge({ tone = "neutral", icon, children, className }) {
+export function Badge({ tone = "neutral", icon, children, className, wrap = false }) {
   return (
     <span
       className={cn(
-        // whitespace-nowrap: a badge is a short status label, never a
-        // sentence. Without it "On sale" broke across two lines in a narrow
-        // table column and the pill wrapped around them, which reads as a
-        // squashed button rather than a status. None of the 42 call sites
-        // carry text that wants wrapping.
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold",
+        // whitespace-nowrap by default: a badge is a short status label,
+        // never a sentence. Without it "On sale" broke across two lines in
+        // a narrow table column and the pill wrapped around them, which
+        // reads as a squashed button rather than a status.
+        //
+        // `wrap` is the exception, for the rare badge that carries a whole
+        // sentence (the scope.any warning on /pro/permissions is 410px in
+        // English, 515px in French -- it cannot fit a phone on one line and
+        // ran out of its card). It REPLACES the nowrap rather than adding
+        // an override beside it: cn() is a plain join, not tailwind-merge,
+        // so passing whitespace-normal in className would leave both on the
+        // element and let stylesheet order pick the winner.
+        //
+        // items-start with it, so the icon sits on the first line instead
+        // of floating beside the middle of a three-line sentence.
+        wrap ? "inline-flex items-start gap-1.5 whitespace-normal text-start" : "inline-flex items-center gap-1.5 whitespace-nowrap",
+        "rounded-full px-2.5 py-1 text-xs font-bold",
         TONES[tone],
         className,
       )}

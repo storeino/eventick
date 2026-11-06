@@ -117,8 +117,10 @@ export default function Permissions() {
                 {/* break-all: "gate.checkin" is one token to a browser,
                     and on a narrow card it would otherwise set the floor. */}
                 <code className="break-all font-mono text-sm font-extrabold text-ink">{perm.key}</code>
+                {/* wrap: this badge carries a whole sentence, unlike the
+                    short status labels Badge is built for. */}
                 {perm.key === DANGEROUS ? (
-                  <Badge tone="warn" icon={<AlertTriangle className="size-3" />}>
+                  <Badge wrap tone="warn" icon={<AlertTriangle className="size-3" />}>
                     {t.permScopeWarn}
                   </Badge>
                 ) : null}
