@@ -26,7 +26,23 @@ export function PageHead({ title, sub, actions }) {
         <h1 className="font-display text-[26px] font-bold leading-tight tracking-tight">{title}</h1>
         {sub ? <p className="mt-0.5 text-sm text-muted">{sub}</p> : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2.5">{actions}</div> : null}
+      {/* Below sm every action takes the full line.
+
+          These children carry widths meant for the wide layout (w-56, a
+          14rem min-width, a button sized to its label). Once the row wraps
+          on a phone each one sat at that width on a line of its own with
+          100-170px of dead space beside it.
+
+          Done with a child selector rather than a class on each call site,
+          so a new action is right by default. items-stretch would not do
+          it: that stretches the CROSS axis, and a button on its own line
+          keeps its content width. [&>*] also reaches the Btn, which
+          carries shrink-0 and would otherwise never grow. */}
+      {actions ? (
+        <div className="flex w-full flex-wrap items-center gap-2.5 [&>*]:w-full sm:w-auto sm:[&>*]:w-auto">
+          {actions}
+        </div>
+      ) : null}
     </div>
   );
 }

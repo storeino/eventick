@@ -180,7 +180,7 @@ export default function Invitations() {
           <>
             {/* Step 1, admins only -- it gates the event picker beside it. */}
             {maySeeAllOrganisers ? (
-              <span className="inline-block w-56">
+              <span className="block w-full sm:inline-block sm:w-56">
                 <Dropdown
                   value={organiserId}
                   onChange={setOrganiserId}

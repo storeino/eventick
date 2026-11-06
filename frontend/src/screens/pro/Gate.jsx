@@ -258,7 +258,7 @@ export default function Gate() {
               the control goes straight back to its prompt, so `value` stays
               empty on purpose and the placeholder is the only label it ever
               shows. */}
-          <span className="inline-block w-56">
+          <span className="block w-full sm:inline-block sm:w-56">
             <Dropdown
               value=""
               onChange={(slug) => { if (slug) downloadManifest(slug); }}

@@ -35,7 +35,10 @@ export function EventSwitcher({ events, value, onChange, locale, labels }) {
       align="end"
       width="w-80"
       trigger={({ open }) => (
-        <span className="flex h-11 min-w-[14rem] items-center gap-2.5 rounded-control border border-line/15 bg-card ps-2 pe-3 text-start transition hover:border-primary/40">
+        /* min-w only from sm. Below it this was a 224px floor the
+           trigger could not shrink past, so on a phone it kept that width
+           on its own wrapped line instead of filling it. */
+        <span className="flex h-11 w-full items-center gap-2.5 rounded-control border border-line/15 bg-card ps-2 pe-3 text-start transition hover:border-primary/40 sm:min-w-[14rem]">
           {current?.image ? (
             <img src={current.image} alt="" className="size-7 shrink-0 rounded-[6px] object-cover" />
           ) : (
