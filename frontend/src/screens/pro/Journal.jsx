@@ -150,11 +150,15 @@ export default function Journal() {
             return (
               <article
                 key={event.id}
-                className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-card border border-line/10 bg-card px-4 py-3 shadow-card"
+                className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 rounded-card border border-line/10 bg-card px-4 py-3 shadow-card"
               >
-                <span className="min-w-44 text-sm font-bold">{labelFor(t, event.action)}</span>
+                {/* The 11rem floor only from sm. It lines the labels up
+                    into a column on a wide screen, which is the point of
+                    it, but on a phone it is 176px that cannot shrink in a
+                    328px row. */}
+                <span className="text-sm font-bold sm:min-w-44">{labelFor(t, event.action)}</span>
 
-                <span className="min-w-0 flex-1 text-sm text-muted">
+                <span className="min-w-0 flex-1 break-words text-sm text-muted">
                   {event.subject.label ?? event.subject.id ?? "—"}
                   {detail ? <span className="ms-2 font-semibold text-ink">{detail}</span> : null}
                 </span>
@@ -162,9 +166,16 @@ export default function Journal() {
                 {/* The actor, and whether their account still exists. Saying
                     so stops a detached row reading as a live account that
                     cannot be found. */}
-                <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted">
+                {/* No shrink-0, and the email breaks.
+
+                    A guest-share actor is an address like
+                    fe-guest-share-1793981672798@example.com: 40 characters
+                    with nothing to break on, ~240px that no min-w-0 can
+                    compress. With shrink-0 on top, the row could not be
+                    narrower than ~492px and ran well past any phone. */}
+                <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
                   {t.journalBy}
-                  <span className="font-semibold text-ink">{event.actor.email}</span>
+                  <span className="break-all font-semibold text-ink">{event.actor.email}</span>
                   {event.actor.deleted ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-sunken px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                       <ShieldAlert className="size-3" aria-hidden />

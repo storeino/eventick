@@ -261,7 +261,7 @@ export default function Users() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-display text-base font-bold">{application.displayName}</p>
-                    <p className="text-sm text-muted">
+                    <p className="break-words text-sm text-muted">
                       {application.applicant.name} · {application.applicant.email}
                     </p>
                   </div>
