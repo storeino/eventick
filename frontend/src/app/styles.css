@@ -403,6 +403,22 @@
     border-radius: 999px;
   }
 
+  /* Scrolls, but shows no bar.
+     For a row that overflows ONLY on a narrow screen -- a tab strip, a
+     pill group -- where the bar is a grey line under the controls at
+     every width that does not need it, and the content itself already
+     shows there is more (a half-cut pill is the affordance). Not for a
+     panel or a table, where the bar is the only thing telling you the
+     content is longer than the box: use .scroll-thin there. */
+  .scroll-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scroll-none::-webkit-scrollbar {
+    display: none;
+  }
+
   input[type="range"] {
     accent-color: var(--color-primary);
     width: 100%;

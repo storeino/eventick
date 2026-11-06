@@ -207,7 +207,7 @@ export default function Platform() {
       {/* Pills rather than underlines, matching the account tabs on
           /billets -- this app has one tab idiom and a second one here
           would just be a second thing to learn. */}
-      <div className="mb-5 flex gap-2 overflow-x-auto" role="tablist">
+      <div className="scroll-none mb-5 flex gap-2 overflow-x-auto" role="tablist">
         {TABS.map(([id, label, count]) => (
           <button
             key={id}

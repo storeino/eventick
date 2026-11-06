@@ -275,7 +275,7 @@ function BilletsInner() {
             Hidden, not disabled: a tab that can never hold anything is not
             a state the user can get out of, so there is nothing to disable. */}
         {canUsePro ? null : (
-        <div className="flex gap-2 overflow-x-auto">
+        <div className="scroll-none flex gap-2 overflow-x-auto">
           {[
             ["active", t("tabActive")],
             ["past", t("tabPast")],

@@ -224,7 +224,7 @@ export default function Explorer() {
       </section>
 
       <div className="mx-auto max-w-7xl px-4 py-8 md:px-8">
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="scroll-none flex gap-2 overflow-x-auto pb-1">
           <Chip active={!search.cat} onClick={() => setSearch({ cat: "" })}>
             {t("allGenres")}
           </Chip>

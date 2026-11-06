@@ -204,7 +204,7 @@ export default function Finance() {
 
       {/* Pills, matching /pro/platform and /billets rather than adding a
           third tab idiom to the app. */}
-      <div className="mb-5 flex gap-2 overflow-x-auto" role="tablist">
+      <div className="scroll-none mb-5 flex gap-2 overflow-x-auto" role="tablist">
         {[
           ["revenue", t.finTabRevenue, 0],
           // A missing RIB is the one thing here that BLOCKS money, so it is
