@@ -43,6 +43,21 @@ export default function Finance() {
   const [period, setPeriod] = useState("month");
   /** In flight, so the button cannot be pressed twice. */
   const [planBusy, setPlanBusy] = useState(false);
+  /*
+   * Which question is being asked.
+   *
+   * One scroll answered three unrelated ones -- how are sales going, where
+   * does my money go and when did it arrive, and what am I being charged --
+   * with the bank form wedged between the plan and the payout list. The
+   * RIB in particular is the thing an organiser comes here to fix after
+   * being told a payout cannot be sent, and it was the hardest thing on the
+   * page to find.
+   *
+   * Split by question, not by data source: "Versements" holds the account
+   * AND the history, because "where is my money" is one question even
+   * though it reads from two endpoints.
+   */
+  const [tab, setTab] = useState("revenue");
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -180,6 +195,50 @@ export default function Finance() {
         }
       />
 
+      {/* Pills, matching /pro/platform and /billets rather than adding a
+          third tab idiom to the app. */}
+      <div className="mb-5 flex gap-2 overflow-x-auto" role="tablist">
+        {[
+          ["revenue", t.finTabRevenue, 0],
+          // A missing RIB is the one thing here that BLOCKS money, so it is
+          // the one thing the tabs flag. Only for the organiser's own page:
+          // an admin reading someone else's finances is not the person who
+          // can fix it, and readOnly already hides the form from them.
+          ["payouts", t.finTabPayouts, !organiserId && finance && !finance.bankAccount ? 1 : 0],
+          ["plan", t.finTabPlan, 0],
+        ].map(([id, label, flag]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            className={cn(
+              "h-11 shrink-0 rounded-full px-4 text-sm font-semibold transition",
+              tab === id ? "bg-action text-action-fg" : "bg-card text-ink hover:bg-brume",
+            )}
+            onClick={() => setTab(id)}
+          >
+            {label}
+            {flag ? (
+              <span
+                className={cn(
+                  "ms-2 rounded-full px-2 py-0.5 text-xs font-bold",
+                  tab === id ? "bg-action-fg/20 text-action-fg" : "bg-warn-bg text-warn",
+                )}
+              >
+                !
+              </span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+
+      {/* ── REVENUS: how are sales going ───────────────────────────────── */}
+      {tab === "revenue" ? (
+      <>
+      {/* Inside the tab, not above it: the period narrows the revenue
+          figures only -- the payout list and the plan are not scoped by it,
+          so a picker floating over all three would claim otherwise. */}
       <PeriodPicker value={period} onChange={setPeriod} labels={periodLabels} className="mb-4" />
 
       {/*
@@ -243,6 +302,36 @@ export default function Finance() {
         </Card>
       ) : null}
 
+      <SectionTitle>{t.perEvent}</SectionTitle>
+      {orders && byEvent.length === 0 ? (
+        <EmptyState icon="💰" title={t.empty} />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {byEvent.map((row) => (
+            <article key={row.slug} className="flex items-center gap-3 rounded-card border border-line/10 bg-card p-4 shadow-card">
+              <img src={row.image} alt="" className="size-12 shrink-0 rounded-control object-cover" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold">{row.title}</p>
+                <p className="truncate text-xs text-muted">{row.city}</p>
+                <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-muted">
+                  <Ticket className="size-3.5" aria-hidden />
+                  {row.tickets}
+                </p>
+              </div>
+              <p className="shrink-0 text-end">
+                <span className="block font-display text-subhead font-bold tabular-nums">{money(row.gross)}</span>
+                <span className="block text-[11px] font-semibold text-muted">MAD</span>
+              </p>
+            </article>
+          ))}
+        </div>
+      )}
+      </>
+      ) : null}
+
+      {/* ── FORMULE: what am I being charged ───────────────────────────── */}
+      {tab === "plan" ? (
+      <>
       {/* Plan — read-only. It used to be three buttons that changed the fee
           on screen and nothing in the world. */}
       <SectionTitle>{t.plan}</SectionTitle>
@@ -383,6 +472,15 @@ export default function Finance() {
         </Card>
       ) : null}
 
+      </>
+      ) : null}
+
+      {/* ── VERSEMENTS: where does my money go, and when did it arrive ───
+          The account and the history together: two endpoints, one
+          question. The RIB form leads, because an organiser sent here by
+          "no bank details on file" is here to fill it in. */}
+      {tab === "payouts" ? (
+      <>
       <BankPanel t={t} current={finance?.bankAccount ?? null} readOnly={Boolean(organiserId)} />
 
       <SectionTitle>{t.payoutsTitle}</SectionTitle>
@@ -395,31 +493,8 @@ export default function Finance() {
           ))}
         </div>
       )}
-
-      <SectionTitle>{t.perEvent}</SectionTitle>
-      {orders && byEvent.length === 0 ? (
-        <EmptyState icon="💰" title={t.empty} />
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {byEvent.map((row) => (
-            <article key={row.slug} className="flex items-center gap-3 rounded-card border border-line/10 bg-card p-4 shadow-card">
-              <img src={row.image} alt="" className="size-12 shrink-0 rounded-control object-cover" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold">{row.title}</p>
-                <p className="truncate text-xs text-muted">{row.city}</p>
-                <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-muted">
-                  <Ticket className="size-3.5" aria-hidden />
-                  {row.tickets}
-                </p>
-              </div>
-              <p className="shrink-0 text-end">
-                <span className="block font-display text-subhead font-bold tabular-nums">{money(row.gross)}</span>
-                <span className="block text-[11px] font-semibold text-muted">MAD</span>
-              </p>
-            </article>
-          ))}
-        </div>
-      )}
+      </>
+      ) : null}
     </div>
   );
 }
