@@ -12,7 +12,7 @@ import { useFavorites } from "../FavoritesContext";
 import { useCatalog } from "../useCatalog";
 import { Button, EmptyState, Field, Input, Modal } from "../ui";
 import { useI18n } from "../i18n";
-import { daysUntil, eventText, longDate, todayKey } from "../utils";
+import { cn, daysUntil, eventText, longDate, todayKey } from "../utils";
 
 /**
  * Where a customer's resale money goes.
@@ -280,6 +280,7 @@ function BilletsInner() {
             ["active", t("tabActive")],
             ["past", t("tabPast")],
             ["saved", t("tabSaved")],
+            ["bank", t("tabBank")],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -293,6 +294,21 @@ function BilletsInner() {
               {label}
               {id === "active" ? ` (${active.length})` : ""}
               {id === "saved" ? ` (${savedEvents.length})` : ""}
+              {/* No RIB is the one thing here that stops money arriving, so
+                  the tab says so rather than waiting to be opened. Only once
+                  the fetch has answered: bankOnFile is null both before the
+                  answer and when there is genuinely no account, so without
+                  bankLoaded this flashes on every page load. */}
+              {id === "bank" && bankLoaded && !bankOnFile ? (
+                <span
+                  className={cn(
+                    "ms-2 rounded-full px-2 py-0.5 text-xs font-bold",
+                    tab === id ? "bg-action-fg/20 text-action-fg" : "bg-warn-bg text-warn",
+                  )}
+                >
+                  !
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
@@ -429,12 +445,25 @@ function BilletsInner() {
           </div>
         ) : null}
 
-        {/* Three cards for a buyer (receipt + profile + payout account), one
-            for staff: the last transaction is a purchase receipt, so for an
-            account that never buys it is a card that exists only to say
-            "nothing here", and staff are paid through Finance, not here.
-            Two columns rather than three, so none of them gets squeezed
-            into a sliver on a laptop; the third wraps underneath. */}
+        {/* Its own tab rather than a third card in the grid below.
+            It was sharing a row with a purchase receipt and a name field,
+            which put the account that money is PAID INTO next to two things
+            that are only read -- and it is the longest thing on the page
+            once the form is open. Staff do not resell, so they never see
+            it: an organiser's payout account lives on Finance. */}
+        {!canUsePro && tab === "bank" ? (
+          <div className="mt-6 max-w-xl">
+            <ClientBankCard onFile={bankOnFile} setOnFile={setBankOnFile} />
+          </div>
+        ) : null}
+
+        {/* Two cards for a buyer (receipt + profile), one for staff: the
+            last transaction is a purchase receipt, so for an account that
+            never buys it is a card that exists only to say "nothing here".
+            These sit below every tab because they describe the ACCOUNT
+            rather than any one view of it; the payout account used to be
+            here too and is now its own tab, being a form rather than a
+            read-only summary. */}
         <section className={`mt-8 grid gap-4 ${canUsePro ? "" : "lg:grid-cols-2"}`}>
           {canUsePro ? null : (
           <article className="rounded-card border border-line/10 bg-card p-4 shadow-card">
@@ -496,9 +525,6 @@ function BilletsInner() {
               </button>
             )}
           </article>
-          {/* Staff do not resell tickets; an organiser's payout account
-              lives on the Finance screen instead. */}
-          {canUsePro ? null : <ClientBankCard onFile={bankOnFile} setOnFile={setBankOnFile} />}
         </section>
       </div>
 
