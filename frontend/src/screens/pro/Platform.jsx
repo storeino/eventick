@@ -360,7 +360,7 @@ export default function Platform() {
             {refunds.refunds.map((row) => (
               <article
                 key={row.orderId}
-                className="flex flex-wrap items-center gap-4 rounded-card border border-danger/30 bg-danger-bg/30 p-4"
+                className="flex min-w-0 flex-wrap items-center gap-4 rounded-card border border-danger/30 bg-danger-bg/30 p-4"
               >
                 <div className="min-w-0 flex-1">
                   <p className="font-bold">
@@ -371,7 +371,7 @@ export default function Platform() {
                   </p>
                   {/* The CMI transaction to reverse, which is what the person
                       doing it in the back office actually needs. */}
-                  <p className="mt-1 font-mono text-xs text-muted">
+                  <p className="mt-1 break-all font-mono text-xs text-muted">
                     {row.gatewayRef ?? t.plRefundNoGatewayRef}
                   </p>
                   {/* Where to send it, when there is no card charge to
@@ -381,7 +381,12 @@ export default function Platform() {
                       is why "Mark as sent" could be pressed for a payment
                       nobody was able to make. */}
                   {row.gatewayRef ? null : row.bank ? (
-                    <p className="mt-1 font-mono text-xs text-ink">
+                    /* break-all on the RIB: 24 digits is a single
+                       unbreakable token ~173px wide, so min-w-0 above it
+                       changes nothing -- the row simply cannot be narrower
+                       than the number. Wrapping mid-number is fine here;
+                       it is read in groups off the screen either way. */
+                    <p className="mt-1 break-all font-mono text-xs text-ink">
                       {row.bank.holderName} · {row.bank.rib}
                       {row.bank.bank ? ` · ${row.bank.bank}` : ""}
                     </p>
@@ -392,7 +397,7 @@ export default function Platform() {
                   )}
                 </div>
                 <Button
-                  className="shrink-0"
+                  className="w-full shrink-0 sm:w-auto"
                   // Nothing to pay into means nothing to record. The server
                   // refuses this too; disabling it here just stops the click
                   // that can only end in an error.
@@ -465,7 +470,7 @@ export default function Platform() {
             {planRequests.map((row) => (
               <article
                 key={row.id}
-                className="flex flex-wrap items-center gap-4 rounded-card border border-warn/30 bg-warn-bg/40 p-4"
+                className="flex min-w-0 flex-wrap items-center gap-4 rounded-card border border-warn/30 bg-warn-bg/40 p-4"
               >
                 <div className="min-w-0 flex-1">
                   <p className="font-bold">{row.organiser.name}</p>
@@ -532,7 +537,7 @@ export default function Platform() {
           {sortedSellers.map((seller) => (
             <article
               key={seller.id}
-              className="flex flex-wrap items-center gap-4 rounded-card border border-line/10 bg-card p-4 shadow-card"
+              className="flex min-w-0 flex-wrap items-center gap-4 rounded-card border border-line/10 bg-card p-4 shadow-card"
             >
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 font-bold">
@@ -745,7 +750,9 @@ function PayoutAdminRow({ row, t, onChanged }) {
           payment credential once the money has gone. */}
       {row.status === "PENDING" ? (
         <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-line/10 pt-3">
-          <p className="me-auto font-mono text-xs text-muted">
+          {/* break-all: the RIB is a 24-digit unbreakable token, the
+              same reason the refunds queue above needs it. */}
+          <p className="me-auto break-all font-mono text-xs text-muted">
             {row.bank
               ? `${row.bank.holderName} · ${row.bank.rib}${row.bank.bank ? ` · ${row.bank.bank}` : ""}`
               : t.plNoBank}
