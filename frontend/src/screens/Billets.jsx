@@ -48,8 +48,8 @@ function ClientBankCard({ onFile, setOnFile }) {
   const submit = async (e) => {
     e.preventDefault();
     if (busy) return;
-    const digits = rib.replace(/[s-]/g, "");
-    if (!/^d{24}$/.test(digits)) {
+    const digits = rib.replace(/[\s-]/g, "");
+    if (!/^\d{24}$/.test(digits)) {
       setError(t("cbBadRib"));
       return;
     }
