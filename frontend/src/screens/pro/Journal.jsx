@@ -148,34 +148,38 @@ export default function Journal() {
           {(events ?? []).map((event) => {
             const detail = describe(t, event);
             return (
+              /* A stack on a phone, one row from sm up.
+
+                  Four columns fighting over a 328px line is what broke
+                  this. The subject carries flex-1 -- basis 0, so it takes
+                  only what the other three leave -- and at phone width that
+                  was about 30px, which turned a long email into a vertical
+                  ladder of single characters. Wrapping is not the fix when
+                  the box itself has collapsed; the columns have to stop
+                  sharing a line. From sm they do share one again, and the
+                 11rem label floor lines them into a column as before. */
               <article
                 key={event.id}
-                className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 rounded-card border border-line/10 bg-card px-4 py-3 shadow-card"
+                className="flex min-w-0 flex-col gap-1 rounded-card border border-line/10 bg-card px-4 py-3 shadow-card sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1"
               >
-                {/* The 11rem floor only from sm. It lines the labels up
-                    into a column on a wide screen, which is the point of
-                    it, but on a phone it is 176px that cannot shrink in a
-                    328px row. */}
                 <span className="text-sm font-bold sm:min-w-44">{labelFor(t, event.action)}</span>
 
-                <span className="min-w-0 flex-1 break-words text-sm text-muted">
+                {/* break-words, not break-all: with a real column to sit in
+                    this wraps at the punctuation in an address rather than
+                    mid-word, and ordinary labels read normally. */}
+                <span className="min-w-0 break-words text-sm text-muted sm:flex-1">
                   {event.subject.label ?? event.subject.id ?? "—"}
                   {detail ? <span className="ms-2 font-semibold text-ink">{detail}</span> : null}
                 </span>
 
                 {/* The actor, and whether their account still exists. Saying
                     so stops a detached row reading as a live account that
-                    cannot be found. */}
-                {/* No shrink-0, and the email breaks.
-
-                    A guest-share actor is an address like
-                    fe-guest-share-1793981672798@example.com: 40 characters
-                    with nothing to break on, ~240px that no min-w-0 can
-                    compress. With shrink-0 on top, the row could not be
-                    narrower than ~492px and ran well past any phone. */}
-                <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
+                    cannot be found. No shrink-0: a guest-share address is
+                    40 characters with nothing to break on, and pinning it
+                    set the floor for the whole row. */}
+                <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted">
                   {t.journalBy}
-                  <span className="break-all font-semibold text-ink">{event.actor.email}</span>
+                  <span className="break-words font-semibold text-ink">{event.actor.email}</span>
                   {event.actor.deleted ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-sunken px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                       <ShieldAlert className="size-3" aria-hidden />
