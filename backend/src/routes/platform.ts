@@ -668,6 +668,28 @@ platformRouter.get(
  * and the organiser's payout has already been reduced by it, so the seller is
  * owed and nobody was being told.
  */
+/**
+ * How long a recorded refund may sit unsent before it is a problem.
+ *
+ * refundOrder() emails the buyer "remboursé intégralement" the moment the
+ * organiser clicks cancel, but no money moves there — CMI has no refund API,
+ * so somebody has to reverse each charge in the CMI back office by hand. If
+ * nobody does, the buyer has been told they were refunded and they were not,
+ * and NOTHING in the product noticed. That is the gap this threshold closes.
+ *
+ * Three days: long enough that a normal back-office run on the next working
+ * day is not flagged, short enough that a forgotten cancellation surfaces
+ * while the buyer is still merely waiting rather than complaining.
+ */
+const REFUND_OVERDUE_DAYS = 3;
+
+/** Whole days since a refund was recorded. Null when it has no timestamp. */
+function refundAgeDays(refundedAt: Date | null): number | null {
+  if (!refundedAt) return null;
+  const ms = Date.now() - refundedAt.getTime();
+  return Math.max(0, Math.floor(ms / 86_400_000));
+}
+
 platformRouter.get(
   "/refunds/pending",
   requirePermission("finance.refund"),
@@ -709,6 +731,14 @@ platformRouter.get(
         orderId: o.id,
         amountCents: o.refundedCents,
         refundedAt: o.refundedAt?.toISOString() ?? null,
+        /*
+         * How long this buyer has been waiting, and whether that is now too
+         * long. Computed server-side so every client agrees on the threshold
+         * — a UI that decided "overdue" for itself would disagree with the
+         * alert, and support would be reading two different answers.
+         */
+        ageDays: refundAgeDays(o.refundedAt),
+        overdue: (refundAgeDays(o.refundedAt) ?? 0) >= REFUND_OVERDUE_DAYS,
         refundRef: o.refundRef,
         /** The CMI transaction to reverse. Null on a mock-settled order. */
         gatewayRef: o.gatewayRef,
@@ -735,6 +765,26 @@ platformRouter.get(
         isGuest: !o.customer,
       })),
       totalCents: orders.reduce((sum, o) => sum + o.refundedCents, 0),
+      /*
+       * The alert, as numbers rather than a rendered sentence.
+       *
+       * overdueCount is what makes a forgotten mass cancellation visible:
+       * 400 buyers promised their money and nobody in the back office. It is
+       * sent even when zero, so the UI can say "nothing overdue" rather than
+       * leaving the reader to infer it from an absence.
+       */
+      overdueDays: REFUND_OVERDUE_DAYS,
+      overdueCount: orders.filter(
+        (o) => (refundAgeDays(o.refundedAt) ?? 0) >= REFUND_OVERDUE_DAYS,
+      ).length,
+      overdueCents: orders
+        .filter((o) => (refundAgeDays(o.refundedAt) ?? 0) >= REFUND_OVERDUE_DAYS)
+        .reduce((sum, o) => sum + o.refundedCents, 0),
+      /** The oldest wait in the queue, which is the number worth escalating on. */
+      oldestDays: orders.reduce(
+        (max, o) => Math.max(max, refundAgeDays(o.refundedAt) ?? 0),
+        0,
+      ),
     });
   }),
 );
@@ -847,5 +897,152 @@ platformRouter.post(
     }).catch((err) => logger.warn({ err, orderId: order.id }, "refund-sent email failed"));
 
     res.json({ paid: true, paidAt: updated.refundPaidAt?.toISOString() ?? null });
+  }),
+);
+
+const markRefundsPaidBulkSchema = z.object({
+  /** The orders to close out. Named explicitly rather than "everything
+   *  pending": the operator reverses a specific batch in the CMI back
+   *  office, and a route that marked rows they never saw would record
+   *  payments nobody made — the exact bug the single-order guard exists
+   *  to prevent. */
+  orderIds: z.array(z.string().min(1)).min(1).max(500),
+  /** One reference for the batch, e.g. the CMI settlement file name. */
+  reference: z.string().trim().min(3).max(120),
+});
+
+/**
+ * Record a WHOLE BATCH of refunds as sent.
+ *
+ * A cancelled festival puts every buyer in the queue at once. Closing 400 of
+ * them one dialog at a time is not something anyone finishes, so in practice
+ * the queue was left half-done — which is worse than either extreme, because
+ * the remaining rows look identical to ones nobody has started.
+ *
+ * Deliberately NOT a bulk UPDATE. Each order goes through the same checks as
+ * the single route — already-paid, nothing-to-pay, no-account-on-file — and
+ * each gets its own audit entry and its own email. Collapsing that into one
+ * updateMany is how a batch silently marks rows that individually would have
+ * been refused, and the no-account case is precisely the one that must never
+ * be recorded as paid.
+ *
+ * Partial success is the expected outcome, not an error: the response reports
+ * what was closed and what was skipped and why, so the operator can see which
+ * rows still need a bank account before they can be paid at all.
+ */
+platformRouter.post(
+  "/refunds/paid-bulk",
+  requirePermission("finance.refund"),
+  asyncHandler(async (req, res) => {
+    const body = markRefundsPaidBulkSchema.parse(req.body ?? {});
+    // De-duplicated: the same id twice would attempt the second one against
+    // an order this request had just marked, and report its own write as a
+    // conflict.
+    const ids = [...new Set(body.orderIds)];
+
+    const orders = await prisma.order.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        refundedCents: true,
+        refundPaidAt: true,
+        gatewayRef: true,
+        holderName: true,
+        email: true,
+        event: { select: { titleFr: true } },
+        customer: { select: { bankAccount: { select: { rib: true } } } },
+      },
+    });
+    const found = new Map(orders.map((o) => [o.id, o]));
+
+    const paid: string[] = [];
+    const skipped: { orderId: string; reason: string }[] = [];
+    let paidCents = 0;
+
+    for (const id of ids) {
+      const order = found.get(id);
+      if (!order) {
+        skipped.push({ orderId: id, reason: "not_found" });
+        continue;
+      }
+      if (order.refundedCents <= 0) {
+        skipped.push({ orderId: id, reason: "nothing_to_pay" });
+        continue;
+      }
+      if (order.refundPaidAt) {
+        // Not an error: re-running a batch after a partial failure is the
+        // normal way to finish it, and the rows that already went through
+        // must be left with their original reference.
+        skipped.push({ orderId: id, reason: "already_paid" });
+        continue;
+      }
+      if (!order.gatewayRef && !order.customer?.bankAccount) {
+        skipped.push({ orderId: id, reason: "no_bank_account" });
+        continue;
+      }
+
+      /*
+       * Guarded write, not a blind update.
+       *
+       * `refundPaidAt: null` in the WHERE means two operators working the
+       * same queue cannot both close the same row — the loser's update
+       * matches nothing and the row keeps the reference that was recorded
+       * first, which is the one somebody reconciled against.
+       */
+      const claimed = await prisma.order.updateMany({
+        where: { id: order.id, refundPaidAt: null },
+        data: { refundPaidAt: new Date(), refundPaidRef: body.reference },
+      });
+      if (claimed.count === 0) {
+        skipped.push({ orderId: id, reason: "already_paid" });
+        continue;
+      }
+
+      paid.push(order.id);
+      paidCents += order.refundedCents;
+
+      recordAudit(req, {
+        action: AUDIT_ACTIONS.ORDER_REFUND_PAID,
+        subjectType: "order",
+        subjectId: order.id,
+        subjectLabel: `${(order.refundedCents / 100).toFixed(2)} MAD`,
+        details: {
+          amountCents: order.refundedCents,
+          reference: body.reference,
+          /** So a batch is recognisable as one months later. */
+          bulk: true,
+          batchSize: ids.length,
+        },
+      });
+
+      // One email per buyer, same as the single route: this is the message
+      // that is actually true, where refundOrder only promised.
+      void sendEmail({
+        to: order.email,
+        subject: refundSentSubject({
+          locale: "fr",
+          holderName: order.holderName,
+          eventTitle: order.event.titleFr,
+          amountCents: order.refundedCents,
+          orderId: order.id,
+          reference: body.reference,
+        }),
+        html: refundSentHtml({
+          locale: "fr",
+          holderName: order.holderName,
+          eventTitle: order.event.titleFr,
+          amountCents: order.refundedCents,
+          orderId: order.id,
+          reference: body.reference,
+        }),
+      }).catch((err) => logger.warn({ err, orderId: order.id }, "refund-sent email failed"));
+    }
+
+    logger.info(
+      { requested: ids.length, paid: paid.length, skipped: skipped.length, paidCents },
+      "bulk refund payout recorded",
+    );
+
+    res.json({ paid: paid.length, paidCents, skipped });
   }),
 );

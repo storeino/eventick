@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api, money } from "../../api";
 import { useI18n } from "../../i18n";
 import { cn, eventText } from "../../utils";
-import { Badge, Button, Dropdown, Field, Input, Modal, triggerControlClass } from "../../ui";
+import { Badge, Button, CheckOption, Dropdown, Field, Input, Modal, triggerControlClass } from "../../ui";
 import { EmptyState, PageHead, SectionTitle, StatCard, StatSkeletons } from "./ui";
 import { text } from "./copy";
 
@@ -64,10 +64,29 @@ export default function Platform() {
    * in the CMI back office. Until now nothing listed what was outstanding,
    * so a buyer owed money depended on somebody remembering.
    */
-  const [refunds, setRefunds] = useState({ refunds: [], totalCents: 0 });
+  const [refunds, setRefunds] = useState({
+    refunds: [],
+    totalCents: 0,
+    overdueCount: 0,
+    overdueCents: 0,
+    overdueDays: 3,
+    oldestDays: 0,
+  });
   /** The refund being marked paid, and the reference being typed. */
   const [refundRow, setRefundRow] = useState(null);
   const [refundRef, setRefundRef] = useState("");
+  /*
+   * The batch being closed out, as a Set of order ids.
+   *
+   * A cancelled festival drops every buyer into this queue at once, and
+   * clicking through 400 one-at-a-time dialogs is not something anyone
+   * finishes — so in practice the queue was left half-done, where the
+   * unfinished rows look exactly like ones nobody started.
+   */
+  const [picked, setPicked] = useState(() => new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkRef, setBulkRef] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const loadSellers = useCallback(() => {
     api
@@ -85,7 +104,16 @@ export default function Platform() {
     api
       .get("/platform/refunds/pending")
       .then(setRefunds)
-      .catch(() => setRefunds({ refunds: [], totalCents: 0 }));
+      .catch(() =>
+        setRefunds({
+          refunds: [],
+          totalCents: 0,
+          overdueCount: 0,
+          overdueCents: 0,
+          overdueDays: 3,
+          oldestDays: 0,
+        }),
+      );
   }, []);
   const loadPayouts = useCallback(() => {
     api
@@ -183,6 +211,78 @@ export default function Platform() {
       loadRefunds();
     } catch (err) {
       toast.error(err.message);
+    }
+  };
+
+  /*
+   * Which rows can be batched at all.
+   *
+   * A row with no card charge AND no bank account on file has nowhere for
+   * the money to go, so marking it sent would record a payment nobody could
+   * have made — the server refuses it, and leaving it selectable here just
+   * produces a skipped row the operator has to go and understand. Same
+   * condition as the single-row button's disabled state.
+   */
+  const payableRefunds = refunds.refunds.filter((row) => row.gatewayRef || row.bank);
+  const allPayablePicked =
+    payableRefunds.length > 0 && payableRefunds.every((row) => picked.has(row.orderId));
+
+  const togglePick = (orderId) => {
+    setPicked((prev) => {
+      // A new Set, not a mutation: React compares by identity and a mutated
+      // Set is the same object, so the checkbox would not re-render.
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  };
+  const toggleAll = () => {
+    setPicked(allPayablePicked ? new Set() : new Set(payableRefunds.map((r) => r.orderId)));
+  };
+
+  /*
+   * Close out a whole batch.
+   *
+   * One reference for the lot, because that is how the back office works:
+   * an operator reverses a settlement run and has one file or batch id for
+   * it. The server still checks each order individually and reports what it
+   * skipped, so a partial result is normal rather than a failure.
+   */
+  const submitBulkPaid = async (event) => {
+    event.preventDefault();
+    const reference = bulkRef.trim();
+    if (reference.length < 3) {
+      toast.error(t.plRefundRefTooShort);
+      return;
+    }
+    setBulkBusy(true);
+    try {
+      const result = await api.post("/platform/refunds/paid-bulk", {
+        orderIds: [...picked],
+        reference,
+      });
+      /* Report what actually happened, including the skips. A flat "done"
+         after a batch that closed 3 of 40 is how a half-finished queue
+         gets believed to be finished. */
+      if (result.skipped?.length) {
+        toast.warning(
+          t.plRefundBulkPartial
+            .replace("{paid}", String(result.paid))
+            .replace("{skipped}", String(result.skipped.length)),
+          { duration: 10_000 },
+        );
+      } else {
+        toast.success(t.plRefundBulkDone.replace("{n}", String(result.paid)));
+      }
+      setBulkOpen(false);
+      setBulkRef("");
+      setPicked(new Set());
+      loadRefunds();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBulkBusy(false);
     }
   };
 
@@ -356,15 +456,88 @@ export default function Platform() {
           <p className="-mt-2 mb-3 text-sm text-muted">
             {t.plRefundsDueSub} · <span className="font-bold text-ink">{money(refunds.totalCents)} MAD</span>
           </p>
+
+          {/* ── The alert ────────────────────────────────────────────────
+              refundOrder() emails the buyer "remboursé intégralement" the
+              moment an organiser cancels, but no money moves there — CMI
+              has no refund API, so a person has to reverse each charge in
+              the back office. If nobody does, those buyers have been told
+              they were refunded and they were not, and nothing in the
+              product noticed. This is what noticing looks like. */}
+          {refunds.overdueCount > 0 ? (
+            <div className="mb-4 min-w-0 rounded-card border border-danger bg-danger-bg/50 p-4">
+              <p className="font-bold text-danger">
+                {t.plRefundOverdueTitle
+                  .replace("{n}", String(refunds.overdueCount))
+                  .replace("{days}", String(refunds.overdueDays))}
+              </p>
+              <p className="mt-1 text-sm text-muted">
+                {t.plRefundOverdueBody
+                  .replace("{amount}", `${money(refunds.overdueCents)} MAD`)
+                  .replace("{oldest}", String(refunds.oldestDays))}
+              </p>
+            </div>
+          ) : null}
+
+          {/* ── The batch bar ────────────────────────────────────────────
+              Only when there is more than one payable row: a select-all
+              control above a single item is noise. */}
+          {payableRefunds.length > 1 ? (
+            <div className="mb-3 flex min-w-0 flex-wrap items-center gap-3 rounded-card border border-line/10 bg-card px-4 py-3">
+              <CheckOption
+                checked={allPayablePicked}
+                onChange={toggleAll}
+                label={
+                  picked.size > 0
+                    ? t.plRefundPicked.replace("{n}", String(picked.size))
+                    : t.plRefundPickAll.replace("{n}", String(payableRefunds.length))
+                }
+              />
+              <Button
+                className="w-full sm:ms-auto sm:w-auto"
+                disabled={picked.size === 0}
+                onClick={() => {
+                  setBulkRef("");
+                  setBulkOpen(true);
+                }}
+              >
+                {t.plRefundMarkPickedPaid}
+              </Button>
+            </div>
+          ) : null}
+
           <div className="mb-4 grid gap-3">
             {refunds.refunds.map((row) => (
               <article
                 key={row.orderId}
                 className="flex min-w-0 flex-wrap items-center gap-4 rounded-card border border-danger/30 bg-danger-bg/30 p-4"
               >
+                {/* Only payable rows are selectable — see payableRefunds.
+                    A row with nowhere to send the money must not enter a
+                    batch that claims it was sent. */}
+                {payableRefunds.length > 1 && (row.gatewayRef || row.bank) ? (
+                  <span className="shrink-0">
+                    <CheckOption
+                      checked={picked.has(row.orderId)}
+                      onChange={() => togglePick(row.orderId)}
+                      label=""
+                      ariaLabel={`${money(row.amountCents)} MAD · ${row.buyerName}`}
+                    />
+                  </span>
+                ) : null}
                 <div className="min-w-0 flex-1">
-                  <p className="font-bold">
-                    {money(row.amountCents)} MAD · {row.buyerName}
+                  <p className="flex min-w-0 flex-wrap items-center gap-2 font-bold">
+                    <span className="min-w-0">
+                      {money(row.amountCents)} MAD · {row.buyerName}
+                    </span>
+                    {/* How long this buyer has been waiting. The number is
+                        the server's, so the badge and the alert above can
+                        never disagree about what counts as overdue. */}
+                    {row.ageDays != null ? (
+                      <Badge tone={row.overdue ? "danger" : "neutral"}>
+                        {t.plRefundAgeDays.replace("{n}", String(row.ageDays))}
+                      </Badge>
+                    ) : null}
                   </p>
                   <p className="truncate text-sm text-muted">
                     {row.buyerEmail} · {eventText(row, "eventTitle", locale)}
@@ -441,6 +614,52 @@ export default function Platform() {
             <Field label={t.plRefundRefPrompt}>
               {(props) => (
                 <Input {...props} value={refundRef} onChange={(e) => setRefundRef(e.target.value)} autoFocus />
+              )}
+            </Field>
+          </form>
+        </Modal>
+      ) : null}
+
+      {/* The batch dialog. One reference for the whole run, because that is
+          how a back-office settlement works — the operator has one file or
+          batch id, not forty. */}
+      {bulkOpen ? (
+        <Modal
+          open
+          onClose={() => setBulkOpen(false)}
+          title={t.plRefundMarkPickedPaid}
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setBulkOpen(false)}>
+                {t.cancelBtn}
+              </Button>
+              <Button
+                type="submit"
+                form="refund-bulk-form"
+                disabled={bulkBusy || bulkRef.trim().length < 3}
+              >
+                {t.plRefundMarkPickedPaid}
+              </Button>
+            </>
+          }
+        >
+          <form id="refund-bulk-form" onSubmit={submitBulkPaid}>
+            <p className="mb-3 text-sm text-muted">
+              {t.plRefundBulkConfirm
+                .replace("{n}", String(picked.size))
+                .replace(
+                  "{amount}",
+                  `${money(
+                    refunds.refunds
+                      .filter((r) => picked.has(r.orderId))
+                      .reduce((sum, r) => sum + r.amountCents, 0),
+                  )} MAD`,
+                )}
+            </p>
+            <Field label={t.plRefundRefPrompt} hint={t.plRefundBulkRefHint}>
+              {(props) => (
+                <Input {...props} value={bulkRef} onChange={(e) => setBulkRef(e.target.value)} autoFocus />
               )}
             </Field>
           </form>

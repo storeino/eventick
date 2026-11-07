@@ -32,7 +32,7 @@ export function RadioOption({ checked, label, count, onChange, name }) {
   );
 }
 
-export function CheckOption({ label, checked, onChange }) {
+export function CheckOption({ label, checked, onChange, ariaLabel }) {
   return (
     <label className="flex cursor-pointer items-center gap-2.5 rounded-control px-2 py-2 text-sm transition hover:bg-paper">
       <span className="relative inline-flex size-4 shrink-0 items-center justify-center">
@@ -41,6 +41,9 @@ export function CheckOption({ label, checked, onChange }) {
           checked={checked}
           onChange={(event) => onChange(event.target.checked)}
           className="peer sr-only"
+          /* For a box in a list, where the row is the visible label and
+             there is no text to tie to. */
+          aria-label={!label && ariaLabel ? ariaLabel : undefined}
         />
         <span
           className={cn(
@@ -52,7 +55,9 @@ export function CheckOption({ label, checked, onChange }) {
           {checked ? <CheckIcon className="size-3 text-primary-fg" strokeWidth={3} /> : null}
         </span>
       </span>
-      <span className={checked ? "font-semibold text-ink" : "text-ink"}>{label}</span>
+      {label ? (
+        <span className={checked ? "font-semibold text-ink" : "text-ink"}>{label}</span>
+      ) : null}
     </label>
   );
 }
