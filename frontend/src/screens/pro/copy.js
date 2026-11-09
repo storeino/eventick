@@ -72,6 +72,9 @@ export const text = {
     plRefundRefPrompt: "Référence CMI ou bancaire de l'inversion :",
     plRefundRefTooShort: "Référence trop courte (3 caractères minimum).",
     plRefundMarked: "Remboursement marqué comme versé.",
+    plRefundCreditable: "Compte client — à créditer, aucun virement nécessaire.",
+    plRefundCreditBtn: "Créditer le solde",
+    plRefundCredited: "{n} MAD crédités au solde du client.",
     plRefundAgeDays: "{n} j",
     plRefundOverdueTitle: "{n} remboursement(s) en attente depuis plus de {days} jours",
     plRefundOverdueBody:
@@ -695,6 +698,9 @@ export const text = {
     plRefundRefPrompt: "CMI or bank reference for the reversal:",
     plRefundRefTooShort: "Reference too short (3 characters minimum).",
     plRefundMarked: "Refund marked as sent.",
+    plRefundCreditable: "Customer account — credit it, no transfer needed.",
+    plRefundCreditBtn: "Credit the balance",
+    plRefundCredited: "{n} MAD credited to the customer balance.",
     plRefundAgeDays: "{n}d",
     plRefundOverdueTitle: "{n} refund(s) waiting more than {days} days",
     plRefundOverdueBody:
@@ -1317,6 +1323,9 @@ export const text = {
     plRefundRefPrompt: "مرجع CMI أو البنك لعملية العكس:",
     plRefundRefTooShort: "المرجع قصير جداً (3 أحرف على الأقل).",
     plRefundMarked: "تم تسجيل الاسترجاع كمدفوع.",
+    plRefundCreditable: "حساب زبون — أضف للرصيد، لا حاجة لتحويل.",
+    plRefundCreditBtn: "إضافة للرصيد",
+    plRefundCredited: "تمت إضافة {n} درهم لرصيد الزبون.",
     plRefundAgeDays: "{n} ي",
     plRefundOverdueTitle: "{n} استرجاع في الانتظار أكثر من {days} أيام",
     plRefundOverdueBody:

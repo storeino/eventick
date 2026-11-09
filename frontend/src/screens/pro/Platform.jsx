@@ -249,6 +249,26 @@ export default function Platform() {
    * it. The server still checks each order individually and reports what it
    * skipped, so a partial result is normal rather than a failure.
    */
+  /*
+   * Settle a stuck row as store credit.
+   *
+   * Customers are paid in credit now, so a registered buyer waiting on a
+   * bank transfer is a leftover: refunded before credit existed, or a grant
+   * that failed after the amount was already recorded. The account is right
+   * there, so crediting it settles the debt immediately -- which is a far
+   * better answer than a row reading "No RIB on file" that nobody can act
+   * on.
+   */
+  const creditRefund = async (row) => {
+    try {
+      await api.post(`/platform/refunds/${row.orderId}/credit`, {});
+      toast.success(t.plRefundCredited.replace("{n}", money(row.amountCents)));
+      loadRefunds();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
   const submitBulkPaid = async (event) => {
     event.preventDefault();
     const reference = bulkRef.trim();
@@ -563,12 +583,25 @@ export default function Platform() {
                       {row.bank.holderName} · {row.bank.rib}
                       {row.bank.bank ? ` · ${row.bank.bank}` : ""}
                     </p>
+                  ) : row.creditable ? (
+                    /* A registered account with no credit for this refund.
+                       Not an error to report but a thing to do: the balance
+                       is right there, and crediting it settles the debt
+                       without a bank at all. */
+                    <p className="mt-1 text-xs font-semibold text-success">{t.plRefundCreditable}</p>
                   ) : (
                     <p className="mt-1 text-xs font-semibold text-danger">
                       {row.isGuest ? t.plRefundGuestNoBank : t.plRefundNoBank}
                     </p>
                   )}
                 </div>
+                {/* Credit it, when there is an account to credit. The bank
+                    transfer below stays for guests, who have no balance. */}
+                {row.creditable ? (
+                  <Button className="w-full shrink-0 sm:w-auto" onClick={() => creditRefund(row)}>
+                    {t.plRefundCreditBtn}
+                  </Button>
+                ) : (
                 <Button
                   className="w-full shrink-0 sm:w-auto"
                   // Nothing to pay into means nothing to record. The server
@@ -584,6 +617,7 @@ export default function Platform() {
                 >
                   {t.plRefundMarkPaid}
                 </Button>
+                )}
               </article>
             ))}
           </div>

@@ -791,6 +791,21 @@ platformRouter.get(
           : null,
         /** A guest order has no account to attach a RIB to at all. */
         isGuest: !o.customer,
+        /*
+         * A REGISTERED buyer with no credit for this refund.
+         *
+         * Customers are paid in store credit now, so these should not be
+         * here: they are refunds decided before credit existed, or one where
+         * the grant failed after refundOrder had already recorded the
+         * amount. Either way a bank transfer is the wrong answer -- the
+         * account is right there, and crediting it settles the debt the
+         * moment it is pressed.
+         *
+         * Flagged rather than hidden. Hiding them would leave money owed to
+         * somebody with nothing anywhere saying so, which is the bug the
+         * queue was built to end.
+         */
+        creditable: Boolean(o.customer),
       })),
       totalCents: orders.reduce((sum, o) => sum + o.refundedCents, 0),
       /*
@@ -834,6 +849,96 @@ const markRefundPaidSchema = z.object({
  * row someone will be reading months later when a buyer says the money never
  * arrived.
  */
+/**
+ * POST /platform/refunds/:id/credit — settle a stuck refund as store credit.
+ *
+ * Customers are paid in credit now, so a registered buyer should never be
+ * waiting on a bank transfer. Two ways they still can be: the refund was
+ * decided before credit existed, or refundOrder recorded the amount and the
+ * grant that should have followed it failed. Both leave a row an admin can
+ * see, name and total, and not pay -- the screenshot showed three of them,
+ * each reading "No RIB on file — nowhere to transfer".
+ *
+ * This is the answer to that row: the account is right there, and crediting
+ * it settles the debt the moment it is pressed. No bank, no back office.
+ *
+ * Deliberately NOT automatic. Money that has been owed for days is worth a
+ * person looking at before it moves, and a sweep that silently credited
+ * every stale row would be indistinguishable from one that credited a row
+ * somebody had already paid by hand.
+ */
+platformRouter.post(
+  "/refunds/:id/credit",
+  requirePermission("finance.refund"),
+  asyncHandler(async (req, res) => {
+    const id = param(req, "id");
+    const order = await prisma.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        customerId: true,
+        refundedCents: true,
+        refundPaidAt: true,
+        event: { select: { titleFr: true } },
+        creditEntries: {
+          where: { reason: { in: ["EVENT_CANCELLED", "ORDER_REFUND"] } },
+          select: { id: true },
+        },
+      },
+    });
+    if (!order) throw new HttpError(404, "Order not found");
+    if (order.refundedCents <= 0) throw new HttpError(409, "This order has no refund to settle");
+    if (order.refundPaidAt) {
+      throw new HttpError(409, "This refund was already marked as sent by bank transfer");
+    }
+    if (order.creditEntries.length > 0) {
+      throw new HttpError(409, "This refund was already settled as store credit");
+    }
+    if (!order.customerId) {
+      // A guest has no balance to credit. Theirs is the one case the bank
+      // queue still exists for.
+      throw new HttpError(
+        409,
+        "This is a guest order — there is no account to credit, so it has to be reversed in the CMI back office.",
+      );
+    }
+
+    const granted = await grantCredit({
+      userId: order.customerId,
+      amountCents: order.refundedCents,
+      reason: "ORDER_REFUND",
+      label: `Remboursement — ${order.event.titleFr}`,
+      orderId: order.id,
+      note: "Settled as credit from the refunds queue",
+      actorId: req.user!.id,
+    });
+    if (!granted) {
+      // The unique index fired: something credited this order between the
+      // read above and here. Not an error -- the buyer has their money.
+      throw new HttpError(409, "This refund was already settled as store credit");
+    }
+
+    recordAudit(req, {
+      action: AUDIT_ACTIONS.CREDIT_ADJUSTED,
+      subjectType: "order",
+      subjectId: order.id,
+      subjectLabel: `${(order.refundedCents / 100).toFixed(2)} MAD`,
+      details: {
+        amountCents: order.refundedCents,
+        settledAs: "credit",
+        fromQueue: true,
+      },
+    });
+
+    logger.info(
+      { orderId: order.id, userId: order.customerId, amountCents: order.refundedCents },
+      "stuck refund settled as store credit",
+    );
+
+    res.json({ credited: true, amountCents: order.refundedCents });
+  }),
+);
+
 platformRouter.post(
   "/refunds/:id/paid",
   requirePermission("finance.refund"),
