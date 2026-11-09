@@ -79,6 +79,10 @@ resaleRouter.get(
 /** What a shared listing link is offering. Public: the token is the credential. */
 resaleRouter.get(
   "/:token",
+  /* optionalAuth, so the response can say "this is yours" to a signed-in
+     seller. Still public: a visitor with the token sees the listing either
+     way, and the flag is simply false for them. */
+  optionalAuth,
   asyncHandler(async (req, res) => {
     const listing = await resolveListing(param(req, "token"));
     if (!listing) throw new HttpError(410, "This listing is no longer available");
@@ -95,6 +99,10 @@ resaleRouter.get(
       tierNameAr: listing.ticket.tier.nameAr,
       seatRow: listing.ticket.seatRow,
       seatNumber: listing.ticket.seatNumber,
+      /* Whether the viewer is the seller. A boolean, not the seller id: who
+         listed a ticket is nobody else business, and the screen only needs
+         to know whether to offer a buy button that can only 409. */
+      isOwn: Boolean(req.user && listing.sellerId && req.user.id === listing.sellerId),
     });
   }),
 );
@@ -142,6 +150,31 @@ resaleRouter.post(
 
     const listing = await resolveListing(param(req, "token"));
     if (!listing) throw new HttpError(410, "This listing is no longer available");
+
+    /*
+     * You cannot buy your own seat.
+     *
+     * Nothing stopped this, and it was not merely illogical -- it printed
+     * money. completeResale CREDITS the seller the face value when the seat
+     * sells, so buying your own listing returned the full price to the very
+     * balance it was bought from: measured at +300.00 MAD on a 300.00 MAD
+     * ticket, with 15.00 of commission charged to the organiser for a sale
+     * that moved a seat to nobody. Pay with credit and the loop runs free,
+     * forever.
+     *
+     * Checked against the LISTING sellerId rather than the ticket order,
+     * because that is the account the money goes back to -- the one that
+     * would be on both sides of the trade.
+     *
+     * A guest listing has sellerId null and is unaffected: there is no
+     * account to match, and a guest cannot reach this route anyway.
+     */
+    if (listing.sellerId && listing.sellerId === req.user!.id) {
+      throw new HttpError(
+        409,
+        "This is your own listing — cancel it instead if you want the ticket back.",
+      );
+    }
 
     const order = await prisma.order.create({
       data: {

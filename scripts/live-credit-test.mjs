@@ -255,8 +255,13 @@ async function main() {
   check("a real ticket was issued", tickets2 === 1, `${tickets2}`);
 
   section("Credit covers part of a dearer order, the card pays the rest");
-  const ev3 = await makeEvent("dear", orgaId, { priceCents: 100000 });
+  /* Priced from the LIVE balance, not a fixed figure.
+     The demo customer is shared -- a human clicking around leaves credit on
+     it too -- so a hard-coded 1000 MAD event was fully covered by an 1300
+     balance and this section tested the opposite of its own name. Balance
+     plus 500 guarantees a shortfall whatever it starts at. */
   const before3 = await balance();
+  const ev3 = await makeEvent("dear", orgaId, { priceCents: before3 + 50000 });
   const o3 = await buy(ev3, 1, { useCredit: true });
   check("it did NOT settle as credit-only", o3.pay.mode !== "credit", String(o3.pay.mode));
   check(
@@ -270,7 +275,7 @@ async function main() {
   });
   check(
     "the card was left the remainder, exactly",
-    o3row.totalCents - o3row.creditAppliedCents === 100000 - before3,
+    o3row.totalCents - o3row.creditAppliedCents === o3row.totalCents - before3,
     `card=${mad(o3row.totalCents - o3row.creditAppliedCents)}`,
   );
   check("the balance is now zero", (await balance()) === 0, mad(await balance()));

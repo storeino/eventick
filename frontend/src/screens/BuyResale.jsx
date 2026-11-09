@@ -180,7 +180,20 @@ export default function BuyResale() {
               three fields and is then sent to sign in. `authLoading` is waited
               on so the prompt does not flash during hydration.
             */}
-            {!authLoading && canUsePro ? (
+            {/* Your own listing. The server refuses it (409) because buying
+                your own seat credits you the face value you just paid --
+                a loop that prints balance and charges the organiser
+                commission on a sale that moved a seat to nobody. Said here
+                so the button is not offered at all, rather than failing
+                after the buyer has filled the form. */}
+            {!authLoading && listing.isOwn ? (
+              <div className="mt-5 rounded-control border border-line/15 bg-paper p-3">
+                <p className="text-sm leading-relaxed text-muted">{t("resaleOwnListing")}</p>
+                <Button className="mt-3" variant="secondary" full onClick={() => navigate("/billets")}>
+                  {t("resaleOwnListingCta")}
+                </Button>
+              </div>
+            ) : !authLoading && canUsePro ? (
               <p className="mt-5 rounded-control border border-line/15 bg-paper p-3 text-sm leading-relaxed text-muted">
                 {t("staffNoBuy")}
               </p>
