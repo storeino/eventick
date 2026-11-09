@@ -211,6 +211,11 @@ async function main() {
   }
 
   // ── Cleanup ───────────────────────────────────────────────────────────
+  // Credit entries FIRST, while they still point at these orders.
+  // Cancelling an event grants credit, and the order FK is SetNull — so
+  // deleting the orders first would orphan the credit onto the shared
+  // demo account instead of removing it.
+  await prisma.creditEntry.deleteMany({ where: { orderId: { in: created.orders } } });
   await prisma.order.deleteMany({ where: { id: { in: created.orders } } });
   await prisma.event.deleteMany({ where: { id: { in: created.events } } });
   const leftEvents = await prisma.event.count({ where: { id: { in: created.events } } });

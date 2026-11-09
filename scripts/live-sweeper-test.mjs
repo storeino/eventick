@@ -146,6 +146,11 @@ async function main() {
   const again = await sweepOnce();
   check("a second pass finds nothing to expire", again.expired === 0, `expired=${again.expired}`);
 
+  // Credit entries FIRST, while they still point at these orders.
+  // Cancelling an event grants credit, and the order FK is SetNull — so
+  // deleting the orders first would orphan the credit onto the shared
+  // demo account instead of removing it.
+  await prisma.creditEntry.deleteMany({ where: { order: { eventId: event.id } } });
   await prisma.order.deleteMany({ where: { eventId: event.id } });
   await prisma.waitlistEntry.deleteMany({ where: { eventId: event.id } });
   await prisma.event.delete({ where: { id: event.id } });

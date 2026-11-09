@@ -793,6 +793,12 @@ await scopedDelete("waitlist entries", ids, (i) =>
   prisma.waitlistEntry.deleteMany({ where: { eventId: { in: i } } })).catch(() => {});
 await scopedDelete("invitations", ids, (i) =>
   prisma.invitation.deleteMany({ where: { eventId: { in: i } } })).catch(() => {});
+// Credit entries FIRST, while they still point at these orders.
+// Cancelling an event grants credit, and the order FK is SetNull -- so
+// deleting the orders first would orphan the credit onto the shared demo
+// account instead of removing it.
+await scopedDelete("credit entries", ids, (i) =>
+  prisma.creditEntry.deleteMany({ where: { order: { eventId: { in: i } } } })).catch(() => {});
 await scopedDelete("orders", ids, (i) =>
   prisma.order.deleteMany({ where: { eventId: { in: i } } }));
 const removedEvents = await scopedDelete("events", ids, (i) =>

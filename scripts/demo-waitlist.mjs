@@ -193,6 +193,11 @@ try {
   if (eventId) {
     console.log("\n\x1b[2mcleaning up the demo event…\x1b[0m");
     await prisma.waitlistEntry.deleteMany({ where: { eventId } });
+    // Credit entries FIRST, while they still point at these orders.
+    // Cancelling an event grants credit, and the order FK is SetNull — so
+    // deleting the orders first would orphan the credit onto the shared
+    // demo account instead of removing it.
+    await prisma.creditEntry.deleteMany({ where: { order: { eventId } } });
     await prisma.order.deleteMany({ where: { eventId } });
     await prisma.event.deleteMany({ where: { id: eventId } });
   }

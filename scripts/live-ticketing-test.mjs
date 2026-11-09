@@ -282,6 +282,11 @@ for (const e of evs) {
   await p.ticket.deleteMany({ where: { tierId: { in: tiers } } });
   await p.orderLine.deleteMany({ where: { tierId: { in: tiers } } });
   await p.waitlistEntry.deleteMany({ where: { eventId: e.id } });
+  // Credit entries FIRST, while they still point at these orders.
+  // Cancelling an event grants credit, and the order FK is SetNull — so
+  // deleting the orders first would orphan the credit onto the shared
+  // demo account instead of removing it.
+  await p.creditEntry.deleteMany({ where: { order: { eventId: e.id } } });
   await p.order.deleteMany({ where: { eventId: e.id } });
   await p.ticketTier.deleteMany({ where: { eventId: e.id } });
   await p.event.delete({ where: { id: e.id } });

@@ -182,6 +182,11 @@ async function purgeStale() {
     await prisma.ticketShare.deleteMany({ where: { ticket: { tierId: { in: tierIds } } } });
     await prisma.ticket.deleteMany({ where: { tierId: { in: tierIds } } });
     await prisma.orderLine.deleteMany({ where: { tierId: { in: tierIds } } });
+    // Credit entries FIRST, while they still point at these orders.
+    // Cancelling an event grants credit, and the order FK is SetNull — so
+    // deleting the orders first would orphan the credit onto the shared
+    // demo account instead of removing it.
+    await prisma.creditEntry.deleteMany({ where: { order: { eventId: id } } });
     await prisma.order.deleteMany({ where: { eventId: id } });
     await prisma.ticketTier.deleteMany({ where: { eventId: id } });
     await prisma.event.delete({ where: { id } });
@@ -494,6 +499,11 @@ async function main() {
     await prisma.resaleListing.deleteMany({ where: { ticket: { tierId: { in: tierIds } } } });
     await prisma.ticket.deleteMany({ where: { tierId: { in: tierIds } } });
     await prisma.orderLine.deleteMany({ where: { tierId: { in: tierIds } } });
+    // Credit entries FIRST, while they still point at these orders.
+    // Cancelling an event grants credit, and the order FK is SetNull — so
+    // deleting the orders first would orphan the credit onto the shared
+    // demo account instead of removing it.
+    await prisma.creditEntry.deleteMany({ where: { order: { eventId } } });
     await prisma.order.deleteMany({ where: { eventId } });
     await prisma.ticketTier.deleteMany({ where: { eventId } });
     await prisma.event.delete({ where: { id: eventId } });
