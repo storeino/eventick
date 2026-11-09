@@ -239,29 +239,32 @@ async function main() {
     });
 
     /*
-     * No bank account, no listing.
+     * No bank account is no longer an obstacle.
      *
-     * A resale payout is money the platform holds, so it goes out as a bank
-     * transfer -- and nothing used to collect an account to send it to. The
-     * admin's queue listed a name and an amount it could not pay, and the
-     * seller's own page told them money was on its way to nowhere. Refused
-     * here, while the seller is present and can fix it, rather than weeks
-     * later with the seat sold and the money taken.
+     * This used to refuse: a resale payout was money the platform held, it
+     * left as a bank transfer, and nothing collected an account to send it
+     * to -- so the admin's queue listed a name and an amount it could not
+     * pay. The seller was stopped at listing time, while they were present
+     * and able to fix it.
+     *
+     * A signed-in seller is now paid in STORE CREDIT the moment the seat
+     * sells, which needs no account anywhere, so the guard was blocking the
+     * sale to protect a payment path customers no longer use. Covered end to
+     * end by live-resale-credit-test; checked here so a reinstated guard is
+     * caught by the suite that owns this flow.
      */
     const noBank = await call("POST", "/api/resale/listings", {
       token: seller,
       body: { ticketId: sellerTicket.id },
     });
     check(
-      "listing is refused while the seller has no bank account",
-      noBank.status === 409,
+      "a seller with no bank account can still list",
+      noBank.status === 201,
       `${noBank.status} ${noBank.data?.error ?? ""}`,
     );
-    check(
-      "and the refusal says what to do about it",
-      /bank details/i.test(noBank.data?.error ?? ""),
-      noBank.data?.error,
-    );
+    // Cleared again, so the rest of this suite exercises the bank path it
+    // was written for: an organiser payout still goes out by transfer.
+    await prisma.resaleListing.deleteMany({ where: { ticketId: sellerTicket.id } });
 
     const savedBank = await call("PUT", "/api/auth/me/bank", {
       token: seller,
@@ -354,65 +357,84 @@ async function main() {
       "refundPaidAt + refundPaidRef present",
     );
 
-    // The admin's queue is the other half: someone has to be told to pay.
-    const pending = await call("GET", "/api/platform/refunds/pending", { token: admin });
-    check("the payout appears in the admin's pending queue", pending.status === 200);
-    const row = pending.data?.refunds?.find((r) => r.orderId === sellerOrderId);
-    check("the seller's payout is listed for an admin to action", Boolean(row), row ? `${mad(row.amountCents)} MAD` : "absent");
+    // ──────────────────────────────────────────── where the money went ──
+    section("PAYOUT  the seller is credited, not queued for a transfer");
+
     /*
-     * The queue has to say WHERE to send it. An amount and a name is not a
-     * payment instruction, and that is exactly what this row used to be:
-     * the admin could press "Mark as sent" and had no account to send to.
-     * Full RIB here deliberately -- the route is behind finance.refund, and
-     * a transfer cannot be made from the last four digits.
+     * This half of the suite used to be about the admin's bank queue: the
+     * seller appeared there, the row carried their RIB, and somebody pressed
+     * "Mark as sent" after making a transfer by hand.
+     *
+     * A signed-in seller is now paid in STORE CREDIT the moment the seat
+     * sells. The money is theirs immediately, no account number is involved
+     * and no admin has to do anything -- so the queue correctly no longer
+     * lists them. What must be true instead is checked here.
      */
+    const sellerCredit = await call("GET", "/api/auth/me/credit", { token: seller });
     check(
-      "the queue carries the seller's bank details, so the transfer can actually be made",
-      row?.bank?.rib === "011519000012345678905678",
-      row?.bank ? `${row.bank.holderName} · ${row.bank.rib}` : "no bank on the row",
+      "the seller's balance rose by the face value",
+      sellerCredit.data?.balanceCents >= FACE,
+      `${mad(sellerCredit.data?.balanceCents ?? 0)} MAD`,
     );
-    check("and names the account holder", row?.bank?.holderName === "Resale Seller", row?.bank?.holderName);
+    const resaleEntry = sellerCredit.data?.entries?.find(
+      (e) => e.reason === "ORDER_REFUND" && e.orderId === sellerOrderId,
+    );
+    check(
+      "the ledger records it against the order that was sold",
+      Boolean(resaleEntry),
+      resaleEntry ? `${mad(resaleEntry.amountCents)} — ${resaleEntry.label}` : "no entry",
+    );
+    check(
+      "and the row says what it was for, in words the seller can read",
+      /revente/i.test(resaleEntry?.label ?? ""),
+      resaleEntry?.label,
+    );
 
-    // ────────────────────────────────────────────── the admin pays out ──
-    section("PAYOUT  an admin reverses it and records the reference");
-
-    const REFERENCE = `CMI-TEST-${SUFFIX}`;
-    const mark = await call("POST", `/api/platform/refunds/${sellerOrderId}/paid`, {
+    /*
+     * The double-pay guard, for the resale path.
+     *
+     * A credited seller must not ALSO appear in the bank queue: an admin
+     * working it would send them the same money a second time. The queue
+     * filters on the credit ledger, and a resale grant uses ORDER_REFUND
+     * rather than EVENT_CANCELLED -- which is exactly the case that would be
+     * missed by a filter written for cancellations alone.
+     */
+    const pending = await call("GET", "/api/platform/refunds/pending", { token: admin });
+    check("the admin's queue is readable", pending.status === 200);
+    check(
+      "a credited seller is NOT also queued for a bank transfer",
+      !pending.data?.refunds?.some((r) => r.orderId === sellerOrderId),
+      "absent, as it must be",
+    );
+    const payAnyway = await call("POST", `/api/platform/refunds/${sellerOrderId}/paid`, {
       token: admin,
-      body: { reference: REFERENCE },
-    });
-    check("the admin can mark it sent", mark.status === 200, `${mark.status}`);
-
-    const twice = await call("POST", `/api/platform/refunds/${sellerOrderId}/paid`, {
-      token: admin,
-      body: { reference: "CMI-SECOND-ATTEMPT" },
+      body: { reference: `CMI-SHOULD-REFUSE-${SUFFIX}` },
     });
     check(
-      "marking it twice is refused, so the first reference survives",
-      twice.status === 409,
-      `${twice.status}`,
+      "and marking it sent by hand is refused outright",
+      payAnyway.status === 409,
+      `${payAnyway.status}`,
     );
 
     // ──────────────────────────────────── what the seller sees, after ──
-    section("SELLER'S VIEW  paid, with something to quote");
+    section("SELLER'S VIEW  the money is already theirs");
 
     const settled = await sellerOrder(sellerOrderId);
-    check("the payout now reads as sent", Boolean(settled?.refundPaidAt), `${settled?.refundPaidAt}`);
     check(
-      "the seller can see the bank reference to chase",
-      settled?.refundPaidRef === REFERENCE,
-      settled?.refundPaidRef,
-    );
-    check(
-      "the amount did not change when it was paid",
+      "the amount matches the face value that was refunded",
       settled?.refundedCents === FACE,
       `${mad(settled?.refundedCents ?? 0)} MAD`,
     );
-
-    const afterQueue = await call("GET", "/api/platform/refunds/pending", { token: admin });
+    /*
+     * refundPaidAt stays null on a credited order, and that is correct: it
+     * means "a bank transfer went out", which never happened. /billets no
+     * longer reads it for a customer -- the row links to the balance
+     * instead, where the money actually is.
+     */
     check(
-      "and it leaves the admin's pending queue",
-      !afterQueue.data?.refunds?.some((r) => r.orderId === sellerOrderId),
+      "no bank transfer is claimed, because none was made",
+      settled?.refundPaidAt === null,
+      `refundPaidAt=${settled?.refundPaidAt}`,
     );
 
     // ───────────────────────────────────────────────────── who sees it ──

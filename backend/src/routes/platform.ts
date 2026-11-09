@@ -715,8 +715,14 @@ platformRouter.get(
          * from it. A guest order has no account and so no entry, which is
          * exactly right — it still needs the bank reversal, and still
          * appears here.
+         *
+         * BOTH reasons, not just cancellation. A resale seller is paid in
+         * credit too now, through the same refundOrder call, so filtering
+         * on EVENT_CANCELLED alone would have put every credited seller
+         * back in this queue and recreated the double-pay bug one feature
+         * later.
          */
-        creditEntries: { none: { reason: "EVENT_CANCELLED" } },
+        creditEntries: { none: { reason: { in: ["EVENT_CANCELLED", "ORDER_REFUND"] } } },
       },
       select: {
         id: true,
@@ -849,7 +855,7 @@ platformRouter.post(
         event: { select: { titleFr: true } },
         customer: { select: { bankAccount: { select: { rib: true } } } },
         /** Whether this was already settled as store credit — see below. */
-        creditEntries: { where: { reason: "EVENT_CANCELLED" }, select: { id: true } },
+        creditEntries: { where: { reason: { in: ["EVENT_CANCELLED", "ORDER_REFUND"] } }, select: { id: true } },
       },
     });
     if (!order) throw new HttpError(404, "Order not found");
@@ -989,7 +995,7 @@ platformRouter.post(
         event: { select: { titleFr: true } },
         customer: { select: { bankAccount: { select: { rib: true } } } },
         /** Already settled as store credit — skipped, never paid again. */
-        creditEntries: { where: { reason: "EVENT_CANCELLED" }, select: { id: true } },
+        creditEntries: { where: { reason: { in: ["EVENT_CANCELLED", "ORDER_REFUND"] } }, select: { id: true } },
       },
     });
     const found = new Map(orders.map((o) => [o.id, o]));

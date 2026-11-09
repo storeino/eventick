@@ -3,6 +3,7 @@ import { prisma } from "./prisma.js";
 import { HttpError } from "./http.js";
 import { makeTicketRef } from "../domain/ticketRef.js";
 import { refundOrder } from "./refund.js";
+import { grantCredit } from "./credit.js";
 import { logger } from "./logger.js";
 
 /**
@@ -101,35 +102,22 @@ export async function listTicketForResale(ticketId: string, sellerId: string | n
   }
 
   /*
-   * No account to pay into, no listing.
+   * No bank details needed to list.
    *
-   * The seller's money does not come back the way it went out. A card refund
-   * is reversed by CMI onto the original card; a resale payout is money the
-   * PLATFORM holds, so it leaves as a bank transfer and needs an account
-   * number that nothing in the flow used to ask for. The result was a queue
-   * of refunds the admin could see, name and total, and not pay.
+   * This used to refuse outright: a resale payout is money the platform
+   * holds, it left as a bank transfer, and without an account number there
+   * was a queue of refunds an admin could see, name and total, and not pay.
+   * So the seller was stopped at the one moment they were present and able
+   * to fix it.
    *
-   * Refused at listing time rather than at payout time on purpose. This is
-   * the one moment the seller is present, motivated and able to fix it. The
-   * alternative is selling a stranger a seat and discovering weeks later,
-   * with the event over and the money taken, that there is nowhere to send
-   * it -- which is a promise the platform should not make in the first place.
+   * A signed-in seller is now paid in STORE CREDIT instead (see
+   * completeResale), which lands the moment the seat sells and needs no
+   * account anywhere. The guard it replaced was protecting a payment path
+   * that customers no longer use, and it was blocking the sale to do it.
    *
-   * A guest seller (sellerId null) is exempt because there is no account to
-   * hold a RIB on; those are chased by email, as they always were.
+   * A guest seller still has nowhere to put credit, so their payout stays a
+   * bank reversal and is chased by email, as it always was.
    */
-  if (sellerId) {
-    const account = await prisma.bankAccount.findUnique({
-      where: { userId: sellerId },
-      select: { id: true },
-    });
-    if (!account) {
-      throw new HttpError(
-        409,
-        "Add your bank details before listing a ticket — that is where the money goes when it sells.",
-      );
-    }
-  }
 
   // One live listing per ticket. A previous CANCELLED listing may be replaced;
   // the unique constraint is on ticketId, so reuse the row rather than insert.
@@ -236,12 +224,43 @@ export async function completeResale(
     return { newTicketId: replacement.id, newRef: replacement.ref };
   });
 
-  // Refund the seller their face value. After the transaction: the buyer owns
-  // a working ticket either way, and a refund failure must be visible rather
-  // than rolling back a completed sale.
+  /*
+   * Pay the seller their face value.
+   *
+   * refundOrder records the amount and voids what needs voiding, but it
+   * cannot move money -- CMI has no refund API, and a resale payout is money
+   * the PLATFORM holds, so it used to leave as a bank transfer that somebody
+   * had to make by hand. That is why listing demanded a RIB.
+   *
+   * A signed-in seller is now credited instead: the balance lands here, in
+   * this call, and is spendable immediately. No account number, no queue, no
+   * back office. A guest seller has no balance to credit, so theirs stays a
+   * bank reversal and keeps appearing in the pending-refunds queue -- which
+   * is now the only thing that queue is for.
+   *
+   * After the transaction: the buyer owns a working ticket either way, and a
+   * payout failure must be visible rather than rolling back a completed sale.
+   */
   try {
     await refundOrder(listing.ticket.orderId, listing.priceCents);
-    logger.info({ listingId, refunded: listing.priceCents }, "resale complete, seller refunded");
+    if (listing.sellerId) {
+      await grantCredit({
+        userId: listing.sellerId,
+        amountCents: listing.priceCents,
+        reason: "ORDER_REFUND",
+        label: `Revente — ${listing.ticket.order.event.titleFr}`,
+        orderId: listing.ticket.orderId,
+      });
+      logger.info(
+        { listingId, creditedCents: listing.priceCents, sellerId: listing.sellerId },
+        "resale complete, seller paid in store credit",
+      );
+    } else {
+      logger.info(
+        { listingId, refunded: listing.priceCents },
+        "resale complete, guest seller owed a bank reversal",
+      );
+    }
   } catch (err) {
     /*
      * Still swallowed, because the sale is done and the buyer holds a valid

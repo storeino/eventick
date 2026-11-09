@@ -14,119 +14,6 @@ import { Button, EmptyState, Field, Input, Modal } from "../ui";
 import { useI18n } from "../i18n";
 import { cn, daysUntil, eventText, longDate, todayKey } from "../utils";
 
-/**
- * Where a customer's resale money goes.
- *
- * A refund onto a card needs nothing from the buyer -- CMI reverses the
- * charge it made. Reselling is the other case: the platform holds the
- * seller's money, so paying them is a bank transfer, and nothing used to
- * ask for an account to transfer to. The admin's refund queue showed a
- * name and an amount and no RIB, which made its "Mark as sent" button a
- * claim nobody could act on.
- *
- * Deliberately on the buyer's own page rather than buried in settings: it
- * is the same screen that shows them a pending payout, so the answer to
- * "where is my money" sits next to the question.
- */
-function ClientBankCard({ onFile, setOnFile }) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const [holderName, setHolderName] = useState("");
-  const [bank, setBank] = useState("");
-  const [rib, setRib] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  // Prefill from what is saved, so correcting a misspelled holder name does
-  // not mean retyping it. The RIB is NOT prefilled -- the server returns
-  // only its last four digits, and the hint below says so.
-  useEffect(() => {
-    setHolderName(onFile?.holderName ?? "");
-    setBank(onFile?.bank ?? "");
-  }, [onFile?.holderName, onFile?.bank]);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (busy) return;
-    const digits = rib.replace(/[\s-]/g, "");
-    if (!/^\d{24}$/.test(digits)) {
-      setError(t("cbBadRib"));
-      return;
-    }
-    setError("");
-    setBusy(true);
-    try {
-      const data = await api.put("/auth/me/bank", { holderName: holderName.trim(), rib: digits, bank: bank.trim() });
-      setOnFile(data.bank);
-      setRib("");
-      setOpen(false);
-      toast.success(t("cbSaved"));
-    } catch (err) {
-      toast.error(err.message || t("cbBadRib"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <article className="rounded-card border border-line/10 bg-card p-4 shadow-card">
-      <h2 className="font-display text-xl font-bold">{t("cbTitle")}</h2>
-      <p className="mt-1 text-xs text-muted">{t("cbSub")}</p>
-
-      <p className="mt-3 text-sm">
-        {onFile ? (
-          <span className="font-semibold text-success">
-            {t("cbOnFile")} · {onFile.holderName} · **** {onFile.ribLast4}
-            {onFile.bank ? ` · ${onFile.bank}` : ""}
-          </span>
-        ) : (
-          <span className="font-semibold text-danger">{t("cbMissing")}</span>
-        )}
-      </p>
-
-      {open ? (
-        <form onSubmit={submit} className="mt-4 grid gap-3">
-          <Field label={t("cbHolder")} required>
-            {(props) => <Input {...props} value={holderName} onChange={(e) => setHolderName(e.target.value)} autoComplete="name" />}
-          </Field>
-          <Field label={t("cbBank")}>
-            {(props) => <Input {...props} value={bank} onChange={(e) => setBank(e.target.value)} placeholder="CIH, Attijariwafa…" />}
-          </Field>
-          <Field label={t("cbRib")} error={error} required hint={onFile ? t("cbRibRetype") : undefined}>
-            {(props) => (
-              <Input
-                {...props}
-                value={rib}
-                onChange={(e) => setRib(e.target.value)}
-                inputMode="numeric"
-                placeholder="1234 5678 9012 3456 7890 1234"
-                // A payment credential: keep it out of autofill stores.
-                autoComplete="off"
-              />
-            )}
-          </Field>
-          <div className="flex gap-2">
-            <Button type="submit" disabled={busy || holderName.trim().length < 3 || !rib} className="flex-1">
-              {t("cbSave")}
-            </Button>
-            <button
-              type="button"
-              className="h-11 rounded-full border border-line/20 bg-card px-4 text-sm font-semibold transition hover:bg-paper"
-              onClick={() => setOpen(false)}
-            >
-              {t("cancel")}
-            </button>
-          </div>
-        </form>
-      ) : (
-        <button type="button" className="mt-3 text-sm font-semibold text-primary" onClick={() => setOpen(true)}>
-          {onFile ? t("edit") : t("cbSave")}
-        </button>
-      )}
-    </article>
-  );
-}
-
 function BilletsInner() {
   const { locale, t, tf } = useI18n();
   const navigate = useNavigate();
@@ -144,7 +31,11 @@ function BilletsInner() {
    * the balance, and the tab is shareable and survives a reload.
    */
   const [searchParams, setSearchParams] = useSearchParams();
-  const TABS = ["active", "past", "saved", "credit", "bank"];
+  /* No "bank" tab any more: a customer is paid in store credit, which
+     needs no account number. Their RIB screen was asking for details that
+     nothing in their flow uses -- organiser payouts still use a RIB, and
+     those live on /pro/finance. */
+  const TABS = ["active", "past", "saved", "credit"];
   const urlTab = searchParams.get("tab");
   const tab = TABS.includes(urlTab) ? urlTab : "active";
   const setTab = (next) => {
@@ -155,16 +46,6 @@ function BilletsInner() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(user?.name ?? "");
   const [transferId, setTransferId] = useState(null);
-  /* Whether this person has somewhere to be paid. Held here rather than in
-     ClientBankCard because the history rows need the same answer: a payout
-     that is waiting on a missing RIB is waiting on the reader, and saying
-     only "on its way" would be telling them to sit and wait for something
-     that cannot move until they act. null = not loaded yet. */
-  const [bankOnFile, setBankOnFile] = useState(null);
-  /* Separate from bankOnFile, which is null both before the fetch answers
-     and when there is genuinely no account: without this the "add your RIB"
-     warning flashes on every load before the answer arrives. */
-  const [bankLoaded, setBankLoaded] = useState(false);
   /* Store credit: the balance and the movements behind it.
      The statement, not just a number -- "where did this come from" is the
      first thing anyone asks about money that appeared in their account. */
@@ -176,13 +57,6 @@ function BilletsInner() {
 
   useEffect(() => {
     loadOrders();
-    api
-      .get("/auth/me/bank")
-      .then((data) => setBankOnFile(data.bank))
-      // A failure must not blank the page; "no RIB" is also the safe thing
-      // to show, since it prompts rather than reassures.
-      .catch(() => setBankOnFile(null))
-      .finally(() => setBankLoaded(true));
     api
       .get("/auth/me/credit")
       // Zero is the safe fallback: showing a stale or invented balance would
@@ -308,7 +182,6 @@ function BilletsInner() {
             ["past", t("tabPast")],
             ["saved", t("tabSaved")],
             ["credit", t("tabCredit")],
-            ["bank", t("tabBank")],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -334,21 +207,7 @@ function BilletsInner() {
                   {money(credit.balanceCents)}
                 </span>
               ) : null}
-              {/* No RIB is the one thing here that stops money arriving, so
-                  the tab says so rather than waiting to be opened. Only once
-                  the fetch has answered: bankOnFile is null both before the
-                  answer and when there is genuinely no account, so without
-                  bankLoaded this flashes on every page load. */}
-              {id === "bank" && bankLoaded && !bankOnFile ? (
-                <span
-                  className={cn(
-                    "ms-2 rounded-full px-2 py-0.5 text-xs font-bold",
-                    tab === id ? "bg-action-fg/20 text-action-fg" : "bg-warn-bg text-warn",
-                  )}
-                >
-                  !
-                </span>
-              ) : null}
+
             </button>
           ))}
         </div>
@@ -435,24 +294,21 @@ function BilletsInner() {
                           hand afterwards and refundPaidAt is when it actually
                           went out. Saying "remboursé" at the decision is what
                           sent sellers to their bank to find nothing there. */}
+                      {/* The money went to their BALANCE, not a bank.
+                          A signed-in customer is credited the moment the
+                          seat is resold or the event is cancelled, so
+                          "virement en attente" was telling them to wait for
+                          a transfer that is never coming -- and the RIB
+                          warning under it was asking for an account number
+                          nothing uses any more. Links to the statement,
+                          which is the thing that can actually answer "where
+                          did my money go". */}
                       {order.refundedCents > 0 ? (
-                        <>
-                          <p className={`mt-1 text-xs ${order.refundPaidAt ? "text-success" : "text-muted"}`}>
-                            {(order.refundPaidAt ? t("payoutSent") : t("payoutPending")).replace(
-                              "{n}",
-                              money(order.refundedCents),
-                            )}
-                          </p>
-                          {/* A payout still waiting, with no account to pay
-                              into, is waiting on the reader -- so say so
-                              instead of leaving them to wait for a transfer
-                              that cannot be made. Only once the fetch has
-                              answered (null means not loaded), and never
-                              after the money has gone out. */}
-                          {!order.refundPaidAt && bankOnFile === null && bankLoaded ? (
-                            <p className="mt-1 text-xs font-semibold text-danger">{t("payoutNoBank")}</p>
-                          ) : null}
-                        </>
+                        <p className="mt-1 text-xs text-success">
+                          <Link to="/billets?tab=credit" className="font-semibold underline">
+                            {t("payoutCredited").replace("{n}", money(order.refundedCents))}
+                          </Link>
+                        </p>
                       ) : null}
                     </td>
                   </tr>
@@ -536,12 +392,6 @@ function BilletsInner() {
             ) : (
               <p className="mt-4 text-sm text-muted">{t("creditEmpty")}</p>
             )}
-          </div>
-        ) : null}
-
-        {!canUsePro && tab === "bank" ? (
-          <div className="mt-6 max-w-xl">
-            <ClientBankCard onFile={bankOnFile} setOnFile={setBankOnFile} />
           </div>
         ) : null}
 
