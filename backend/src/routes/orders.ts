@@ -13,6 +13,8 @@ import { settleOrder } from "../lib/settle.js";
 import { withSerializableRetry } from "../lib/serializable.js";
 import { markClaimed, offerFreedSeats, resolveClaim } from "../lib/waitlist.js";
 import { authoriseOrder, authoriseOrderOrOrganiser, newAccessToken } from "../lib/order-access.js";
+import { creditBalance, spendCredit } from "../lib/credit.js";
+import { logger } from "../lib/logger.js";
 
 export const ordersRouter = Router();
 
@@ -325,6 +327,15 @@ const paySchema = z.object({
   claimEntryId: z.string().optional(),
   /** Which language CMI should render its hosted card page in. */
   locale: z.enum(["fr", "en", "ar"]).optional(),
+  /**
+   * Spend the buyer's store credit on this order.
+   *
+   * Opt-in rather than automatic. Credit is the buyer's to time: someone
+   * holding 400 MAD from a cancelled festival may well want to keep it for
+   * the rescheduled date rather than have it silently consumed by a 60 MAD
+   * comedy night. Defaulting it on would spend their money for them.
+   */
+  useCredit: z.boolean().optional(),
 });
 
 /**
@@ -392,11 +403,96 @@ ordersRouter.post(
       order.phone = phone;
     }
 
+    /*
+     * ── Store credit ──────────────────────────────────────────────────
+     *
+     * Spent HERE, at /pay, and not at /hold. A hold is a reservation that
+     * expires and is swept; spending credit there would let an abandoned
+     * cart eat a buyer's balance and give it back only when the sweeper
+     * eventually noticed. Credit moves when money moves.
+     *
+     * The read and the write are in ONE transaction, and the balance is
+     * read with the transaction's client. Reading it outside and spending
+     * inside is exactly how two concurrent checkouts both pass a
+     * `balance >= total` check and spend the same credit twice.
+     *
+     * Guest orders are excluded: credit belongs to an account, and there is
+     * no balance to spend without one.
+     */
+    let creditApplied = order.creditAppliedCents;
+    if (body.useCredit && order.customerId && creditApplied === 0) {
+      const owed = order.totalCents;
+      creditApplied = await withSerializableRetry(() =>
+        prisma.$transaction(async (tx) => {
+          /* Re-read inside the transaction. The order may have been paid or
+             had credit applied by a concurrent request between the read at
+             the top of this handler and here. */
+          const fresh = await tx.order.findUnique({
+            where: { id: order.id },
+            select: { status: true, creditAppliedCents: true, totalCents: true },
+          });
+          if (!fresh || fresh.status !== "PENDING") {
+            throw new HttpError(409, "Order is no longer payable");
+          }
+          if (fresh.creditAppliedCents > 0) return fresh.creditAppliedCents;
+
+          const balance = await creditBalance(order.customerId!, tx);
+          if (balance <= 0) return 0;
+
+          /* The lesser of the two. Partial cover is the normal case: a
+             120 MAD balance against a 300 MAD order pays 120 and the card
+             pays the rest. */
+          const spend = Math.min(balance, fresh.totalCents);
+          if (spend <= 0) return 0;
+
+          await spendCredit({
+            userId: order.customerId!,
+            amountCents: spend,
+            orderId: order.id,
+            label: `Billets — ${order.event.titleFr}`,
+            db: tx,
+          });
+          await tx.order.update({
+            where: { id: order.id },
+            data: { creditAppliedCents: spend },
+          });
+          return spend;
+        }),
+      );
+      order.creditAppliedCents = creditApplied;
+      logger.info(
+        { orderId: order.id, creditApplied, totalCents: owed },
+        "store credit applied to order",
+      );
+    }
+
+    /*
+     * Fully covered by credit: settle now and never go to CMI.
+     *
+     * This is the point of the whole feature. Nothing is owed, so there is
+     * no card to charge and no gateway round trip — and crucially no manual
+     * back-office step anywhere in the chain.
+     *
+     * Checked before the mock branch so it behaves identically with and
+     * without CMI configured.
+     */
+    if (creditApplied >= order.totalCents) {
+      const result = await settleOrder(order.id, {
+        // Not a card. Named so a figure can be explained later: this order
+        // took no money through any gateway.
+        paymentRef: `CREDIT-${order.id}`,
+        cardBank: "Solde Eventick",
+      });
+      if (!result.settled) throw new HttpError(409, "Order could not be settled");
+      if (body.claimEntryId) await markClaimed(body.claimEntryId);
+      return res.json({ mode: "credit", settled: true, creditAppliedCents: creditApplied });
+    }
+
     if (isMockPayments()) {
       const result = await settleOrder(order.id, { paymentRef: makePaymentRef(), cardBank: "Démo" });
       if (!result.settled) throw new HttpError(409, "Order could not be settled");
       if (body.claimEntryId) await markClaimed(body.claimEntryId);
-      return res.json({ mode: "mock", settled: true });
+      return res.json({ mode: "mock", settled: true, creditAppliedCents: creditApplied });
     }
 
     // The waitlist offer closes now rather than after the callback: the

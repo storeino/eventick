@@ -114,6 +114,12 @@ model User {
   /// Applications this person decided, as an admin.
   reviewedApplications  OrganiserApplication[] @relation("OrganiserReviewer")
 
+  /// Store credit. An append-only ledger, not a running total — see
+  /// CreditEntry for why there is no balance column here.
+  creditEntries CreditEntry[] @relation("CreditHolder")
+  /// Credit entries this person granted or adjusted, as staff.
+  grantedCredit CreditEntry[] @relation("CreditActor")
+
   @@map("users")
 }
 
@@ -461,6 +467,19 @@ model Order {
   /// The CMI/bank reference for the reversal, typed in by whoever made it.
   refundPaidRef String?  @map("refund_paid_ref")
 
+  /// How much of this order was paid with store credit rather than a card.
+  ///
+  /// Kept on the order, not inferred from the ledger, because this is what
+  /// makes the money add up: `totalCents` is what the order cost, and the
+  /// card was only ever charged `totalCents - creditAppliedCents`. Without
+  /// it, settlement could not tell a 300 MAD order paid half in credit from
+  /// a 150 MAD order, and the organiser's takings would be overstated by
+  /// every dirham of credit ever spent.
+  ///
+  /// A fully credit-covered order has this equal to totalCents and never
+  /// goes to CMI at all.
+  creditAppliedCents Int @default(0) @map("credit_applied_cents")
+
   createdAt DateTime @default(now()) @map("created_at")
 
   customer    User?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -468,6 +487,9 @@ model Order {
   promoCode   PromoCode?   @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   lines       OrderLine[]
   tickets     Ticket[]
+  /// Credit granted FOR this order (a cancellation) and credit spent ON it
+  /// (a checkout). Both, because both point here.
+  creditEntries CreditEntry[]
   payoutOrder PayoutOrder?
   /// Set when this order exists to pay for a zone upgrade rather than to
   /// buy seats. Such an order carries a held line but never its own ticket.
@@ -1191,4 +1213,105 @@ model PlanRequest {
   @@index([status])
   @@index([userId])
   @@map("plan_requests")
+}
+
+// ---------------------------------------------------------------------------
+// Store credit
+//
+// Money the platform owes a buyer, spendable on tickets. Introduced because
+// an organiser cancelling an event could only ever promise a bank refund:
+// CMI has no refund API, so somebody had to reverse every charge by hand in
+// the CMI back office, and until they did, the buyer had been emailed
+// "remboursé intégralement" and had nothing. Credit settles instantly and
+// needs no bank at all.
+//
+// WHY A LEDGER AND NOT A BALANCE COLUMN
+//
+// The obvious design is `User.creditCents Int`, incremented and decremented.
+// It was rejected:
+//
+//   - A single mutable number cannot answer "where did this come from" or
+//     "what did I spend it on". That question gets asked the first time a
+//     buyer disputes an amount, and a bare total cannot answer it.
+//   - Two concurrent checkouts both reading the same balance can both pass a
+//     `balance >= total` check and both deduct — spending the same credit
+//     twice. Guarding that needs a compare-and-swap on the total, which is
+//     exactly the bug refundOrder already had to fix once.
+//   - A wrong total is unrecoverable. With entries, the total is derived, so
+//     a bad entry is reversed by appending its opposite and the history shows
+//     both.
+//
+// So: append-only rows, balance = SUM(amountCents). Never UPDATE an entry,
+// never DELETE one. A mistake is corrected by a new ADJUSTMENT entry.
+// ---------------------------------------------------------------------------
+
+/// Why a credit entry exists. Narrow on purpose: a reason that is not one of
+/// these is a reason nobody can report on.
+enum CreditReason {
+  /// An event was cancelled and this buyer's order was converted to credit.
+  EVENT_CANCELLED
+  /// An organiser or admin refunded one order as credit.
+  ORDER_REFUND
+  /// Spent at checkout. Negative amount.
+  PURCHASE
+  /// A credit-paid order was itself cancelled, returning what it consumed.
+  PURCHASE_REVERSED
+  /// Staff corrected something by hand. Requires a note.
+  ADJUSTMENT
+}
+
+/// One movement of store credit. Positive = granted, negative = spent.
+///
+/// Rows are immutable. There is deliberately no `updatedAt`: an entry that
+/// can be edited is not a ledger.
+model CreditEntry {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+
+  /// Signed, in cents. Positive grants, negative spends. The sum over a user
+  /// IS their balance; nothing else is authoritative.
+  amountCents Int          @map("amount_cents")
+  reason      CreditReason
+
+  /// The order this entry concerns: the one converted to credit, or the one
+  /// the credit was spent on. Null for a staff ADJUSTMENT with no order.
+  ///
+  /// SetNull, not Cascade: deleting an order must never silently delete the
+  /// credit it produced, which would change a buyer's balance to cover up
+  /// the deletion.
+  orderId String? @map("order_id")
+
+  /// Free text for the holder, shown on their balance screen ("Mawazine
+  /// annulé"). Written at grant time, because the event it refers to may be
+  /// edited or deleted later.
+  label String
+
+  /// Staff-only explanation, required for ADJUSTMENT. Never shown to the
+  /// holder.
+  note String?
+
+  /// Who caused this, when it was a person. Null for anything the system did
+  /// on its own (a cancellation, a checkout spend).
+  actorId String? @map("actor_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation("CreditHolder", fields: [userId], references: [id], onDelete: Cascade)
+  actor User? @relation("CreditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  /// The balance query: every entry for one holder, newest first.
+  @@index([userId, createdAt])
+  /// At most ONE grant per order per reason.
+  ///
+  /// This is the double-grant guard, in the database rather than in a
+  /// transaction. cancelEvent refunds order by order and can be retried
+  /// after a partial failure; without this, a retry would grant a second
+  /// EVENT_CANCELLED entry for an order already converted and double the
+  /// buyer's credit. A unique index cannot be defeated by a race.
+  ///
+  /// PURCHASE is excluded by having its own reason value, so spending credit
+  /// on an order you were granted credit for is still possible.
+  @@unique([orderId, reason])
+  @@map("credit_entries")
 }

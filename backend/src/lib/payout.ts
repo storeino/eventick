@@ -140,6 +140,24 @@ export async function organiserEarnings(organiserId: string | null, period: Peri
    * summariseRevenue prefers over any fallback.
    */
   const fallback = organiserId === null ? await defaultPlan() : await pricingPlanFor(organiserId);
+  /*
+   * totalCents, deliberately — NOT totalCents minus credit applied.
+   *
+   * An organiser sold a ticket at face value and is owed that, however the
+   * buyer settled it. Paying them less because the buyer spent credit would
+   * push the cost of another organiser's cancellation onto them.
+   *
+   * The consequence is real and belongs to the PLATFORM: a credit-paid order
+   * owes the organiser cash that no card ever paid in. Eventick funded it
+   * when it granted the credit instead of reversing the original charge —
+   * that original charge is money Eventick is still holding, so across the
+   * two events the books balance. What does NOT balance is the timing: the
+   * cash went out to the second organiser before the first one's payout was
+   * reduced, so the float is Eventick's to carry.
+   *
+   * Visible rather than netted off, because a silent reduction here is how
+   * an organiser discovers an unexplained shortfall and nobody can say why.
+   */
   const toLine = (o: (typeof orders)[number]): RevenueLine => ({
     totalCents: o.totalCents,
     refundedCents: o.refundedCents,

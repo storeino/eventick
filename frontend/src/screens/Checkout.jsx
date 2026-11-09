@@ -28,8 +28,22 @@ export default function Checkout() {
   const [promoOn, setPromoOn] = useState("");
   const [discountCents, setDiscountCents] = useState(0);
 
+  /* Store credit. Opt-in, not automatic: someone holding 400 MAD from a
+     cancelled festival may want to keep it for the rescheduled date rather
+     than have it silently eaten by a 60 MAD comedy night. */
+  const [creditCents, setCreditCents] = useState(0);
+  const [useCredit, setUseCredit] = useState(false);
   const [payment, setPayment] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  /* The balance, for the toggle below. Zero on failure: offering credit the
+     server will then refuse is worse than not offering it. */
+  useEffect(() => {
+    api
+      .get("/auth/me/credit")
+      .then((data) => setCreditCents(data.balanceCents ?? 0))
+      .catch(() => setCreditCents(0));
+  }, []);
 
   // True from the moment payment succeeds. Without it, the guard below fires
   // on the way out: paying calls clear(), cart becomes null, this effect
@@ -164,6 +178,11 @@ export default function Checkout() {
 
   const total = lines.reduce((sum, line) => sum + line.qty * line.tier.priceCents, 0);
   const due = total - discountCents;
+  /* Mirrors the server's Math.min(balance, totalCents). Shown rather than
+     implied: the buyer has to be able to see what their card is charged
+     before they agree to it. */
+  const creditToApply = useCredit ? Math.min(creditCents, due) : 0;
+  const cardDue = due - creditToApply;
 
   const applyPromo = async (e) => {
     e.preventDefault();
@@ -211,11 +230,14 @@ export default function Checkout() {
         email: email.trim(),
         phone: phone.trim(),
         locale,
+        useCredit,
       });
       setPayment(pay);
 
-      // Mock mode settles immediately — there is no gateway to redirect to.
-      if (pay.mode === "mock" && pay.settled) {
+      /* Fully covered by credit, or mock mode: both settle here with no
+         gateway to redirect to. "credit" is the whole point of the feature
+         -- nothing is owed, so there is no card step at all. */
+      if ((pay.mode === "credit" || pay.mode === "mock") && pay.settled) {
         // Order matters: mark it paid first, so the guard effect above does
         // not treat the emptied cart as "no cart, send them to /explorer".
         paid.current = true;
@@ -408,11 +430,53 @@ export default function Checkout() {
                   </p>
                 ) : null}
 
-                <div className="mt-4 border-t border-stage-fg/15 pt-4">
-                  <p className="text-sm text-stage-muted">{t("total")}</p>
-                  <p className="font-display text-display font-extrabold leading-none tabular-nums">
-                    {money(due)} <span className="text-heading font-bold text-stage-muted">MAD</span>
+                {/* ── Store credit ───────────────────────────────────────
+                    Only when there is some. An always-visible toggle reading
+                    "0 MAD available" is a permanent row of nothing on every
+                    checkout that never had a cancellation behind it. */}
+                {creditCents > 0 ? (
+                  <label className="mt-3 flex min-w-0 cursor-pointer items-start gap-2.5 rounded-control border border-stage-fg/15 p-3 transition hover:border-stage-fg/30">
+                    {/* The shared CheckOption is NOT used here: it hardcodes
+                        text-ink and hover:bg-paper for a light surface, and
+                        this card sits on --et-stage, which is #141418 in
+                        both themes -- it would be dark on dark. The native
+                        box with accent-color picks up the brand colour and
+                        stays visible against the stage. */}
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 size-4 shrink-0 accent-[var(--color-accent)]"
+                      checked={useCredit}
+                      onChange={(e) => setUseCredit(e.target.checked)}
+                    />
+                    <span className="min-w-0 text-sm">
+                      <span className="font-semibold">{t("creditUse")}</span>
+                      <span className="ms-1 tabular-nums text-stage-muted">
+                        ({money(creditCents)} MAD)
+                      </span>
+                    </span>
+                  </label>
+                ) : null}
+
+                {creditToApply > 0 ? (
+                  <p className="mt-3 flex justify-between gap-3 text-sm font-semibold text-accent">
+                    <span>{t("creditApplied")}</span>
+                    <span className="tabular-nums">-{money(creditToApply)}</span>
                   </p>
+                ) : null}
+
+                <div className="mt-4 border-t border-stage-fg/15 pt-4">
+                  {/* The label changes with the figure. Once credit covers
+                      part of it, the big number is what the CARD pays, and
+                      calling that "Total" would understate the order. */}
+                  <p className="text-sm text-stage-muted">
+                    {creditToApply > 0 ? t("creditRemaining") : t("total")}
+                  </p>
+                  <p className="font-display text-display font-extrabold leading-none tabular-nums">
+                    {money(cardDue)} <span className="text-heading font-bold text-stage-muted">MAD</span>
+                  </p>
+                  {cardDue === 0 && creditToApply > 0 ? (
+                    <p className="mt-2 text-sm font-semibold text-accent">{t("creditCoversAll")}</p>
+                  ) : null}
                 </div>
               </div>
             </Card>

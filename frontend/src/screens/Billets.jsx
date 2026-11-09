@@ -148,6 +148,10 @@ function BilletsInner() {
      and when there is genuinely no account: without this the "add your RIB"
      warning flashes on every load before the answer arrives. */
   const [bankLoaded, setBankLoaded] = useState(false);
+  /* Store credit: the balance and the movements behind it.
+     The statement, not just a number -- "where did this come from" is the
+     first thing anyone asks about money that appeared in their account. */
+  const [credit, setCredit] = useState({ balanceCents: 0, entries: [] });
   const [friend, setFriend] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -162,6 +166,12 @@ function BilletsInner() {
       // to show, since it prompts rather than reassures.
       .catch(() => setBankOnFile(null))
       .finally(() => setBankLoaded(true));
+    api
+      .get("/auth/me/credit")
+      // Zero is the safe fallback: showing a stale or invented balance would
+      // be worse than showing none, since it is spendable money.
+      .catch(() => ({ balanceCents: 0, entries: [] }))
+      .then(setCredit);
   }, []);
 
   const today = todayKey();
@@ -280,6 +290,7 @@ function BilletsInner() {
             ["active", t("tabActive")],
             ["past", t("tabPast")],
             ["saved", t("tabSaved")],
+            ["credit", t("tabCredit")],
             ["bank", t("tabBank")],
           ].map(([id, label]) => (
             <button
@@ -294,6 +305,18 @@ function BilletsInner() {
               {label}
               {id === "active" ? ` (${active.length})` : ""}
               {id === "saved" ? ` (${savedEvents.length})` : ""}
+              {/* The amount, on the tab itself. A balance behind an unopened
+                  tab is money the buyer does not know they have. */}
+              {id === "credit" && credit.balanceCents > 0 ? (
+                <span
+                  className={cn(
+                    "ms-2 rounded-full px-2 py-0.5 text-xs font-bold",
+                    tab === id ? "bg-action-fg/20 text-action-fg" : "bg-success-bg text-success",
+                  )}
+                >
+                  {money(credit.balanceCents)}
+                </span>
+              ) : null}
               {/* No RIB is the one thing here that stops money arriving, so
                   the tab says so rather than waiting to be opened. Only once
                   the fetch has answered: bankOnFile is null both before the
@@ -451,6 +474,54 @@ function BilletsInner() {
             that are only read -- and it is the longest thing on the page
             once the form is open. Staff do not resell, so they never see
             it: an organiser's payout account lives on Finance. */}
+        {/* ── Store credit ───────────────────────────────────────────────
+            The statement, not just a total. The balance IS the sum of these
+            rows -- it is not stored anywhere -- so showing the number alone
+            would hide the only thing that can explain it. */}
+        {!canUsePro && tab === "credit" ? (
+          <div className="mt-6 max-w-xl">
+            <div className="rounded-card border border-line/10 bg-card p-5 shadow-card">
+              <p className="text-sm text-muted">{t("creditBalance")}</p>
+              <p className="mt-1 text-3xl font-black text-ink">
+                {money(credit.balanceCents)} <span className="text-lg font-bold">MAD</span>
+              </p>
+              <p className="mt-2 text-sm text-muted">{t("creditHowItWorks")}</p>
+              {credit.balanceCents > 0 ? (
+                <Button className="mt-4 w-full sm:w-auto" onClick={() => navigate("/explorer")}>
+                  {t("creditSpend")}
+                </Button>
+              ) : null}
+            </div>
+
+            {credit.entries.length > 0 ? (
+              <div className="mt-4 grid gap-2">
+                {credit.entries.map((entry) => (
+                  <article
+                    key={entry.id}
+                    className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 rounded-card border border-line/10 bg-card px-4 py-3"
+                  >
+                    <span className="min-w-0 flex-1 break-words text-sm">{entry.label}</span>
+                    <span className="shrink-0 text-xs text-muted">{longDate(entry.createdAt, locale)}</span>
+                    {/* The sign carries the meaning, so it is shown rather
+                        than left for the reader to infer from a colour. */}
+                    <span
+                      className={cn(
+                        "shrink-0 font-bold tabular-nums",
+                        entry.amountCents < 0 ? "text-muted" : "text-success",
+                      )}
+                    >
+                      {entry.amountCents < 0 ? "−" : "+"}
+                      {money(Math.abs(entry.amountCents))}
+                    </span>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted">{t("creditEmpty")}</p>
+            )}
+          </div>
+        ) : null}
+
         {!canUsePro && tab === "bank" ? (
           <div className="mt-6 max-w-xl">
             <ClientBankCard onFile={bankOnFile} setOnFile={setBankOnFile} />

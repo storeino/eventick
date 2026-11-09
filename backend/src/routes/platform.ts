@@ -10,6 +10,7 @@ import { AUDIT_ACTIONS, recordAudit } from "../lib/audit.js";
 import { sendEmail } from "../lib/email.js";
 import { refundSentHtml, refundSentSubject } from "../lib/email-templates.js";
 import { logger } from "../lib/logger.js";
+import { creditBalance, creditStatement, grantCredit } from "../lib/credit.js";
 
 /**
  * The platform console — what someone running the marketplace needs, as
@@ -1044,5 +1045,111 @@ platformRouter.post(
     );
 
     res.json({ paid: paid.length, paidCents, skipped });
+  }),
+);
+
+
+// ─── Store credit ────────────────────────────────────────────────────────
+
+/**
+ * GET /platform/credit/:userId — one holder's balance and statement.
+ *
+ * Behind finance.view: a balance is money owed, and support answering "where
+ * did my credit go" needs the same statement the holder sees.
+ */
+platformRouter.get(
+  "/credit/:userId",
+  requirePermission("finance.view"),
+  asyncHandler(async (req, res) => {
+    const userId = param(req, "userId");
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true },
+    });
+    if (!user) throw new HttpError(404, "User not found");
+    const statement = await creditStatement(userId);
+    res.json({ user, ...statement });
+  }),
+);
+
+const creditAdjustSchema = z.object({
+  /** Signed. Positive grants, negative takes away. */
+  amountCents: z.number().int().refine((n) => n !== 0, "Amount cannot be zero"),
+  /** What the holder sees on their balance screen. */
+  label: z.string().trim().min(3).max(120),
+  /** Why, for staff. Required — see below. */
+  note: z.string().trim().min(5).max(500),
+});
+
+/**
+ * POST /platform/credit/:userId/adjust — correct a balance by hand.
+ *
+ * finance.refund, not finance.view: this creates money a buyer can spend.
+ *
+ * A note is REQUIRED. An adjustment is the one entry on the ledger that no
+ * system action explains, so without a reason it is an unexplained movement
+ * of money in someone's account — and that is the row an auditor stops on.
+ *
+ * A negative adjustment is allowed but cannot take a balance below zero: a
+ * negative balance is a debt the product has no concept of, and a checkout
+ * reading one would refuse every purchase with no way for the buyer to fix
+ * it.
+ */
+platformRouter.post(
+  "/credit/:userId/adjust",
+  requirePermission("finance.refund"),
+  asyncHandler(async (req, res) => {
+    const userId = param(req, "userId");
+    const body = creditAdjustSchema.parse(req.body ?? {});
+
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) throw new HttpError(404, "User not found");
+
+    if (body.amountCents > 0) {
+      await grantCredit({
+        userId,
+        amountCents: body.amountCents,
+        reason: "ADJUSTMENT",
+        label: body.label,
+        note: body.note,
+        actorId: req.user!.id,
+      });
+    } else {
+      /*
+       * Taking credit away. Read-then-write inside one transaction, because
+       * the balance is what bounds it: outside a transaction, a concurrent
+       * purchase could spend the credit between the check and the write and
+       * leave the holder negative.
+       */
+      await prisma.$transaction(async (tx) => {
+        const balance = await creditBalance(userId, tx);
+        if (balance + body.amountCents < 0) {
+          throw new HttpError(
+            409,
+            `That would take the balance below zero — only ${(balance / 100).toFixed(2)} MAD is available`,
+          );
+        }
+        await tx.creditEntry.create({
+          data: {
+            userId,
+            amountCents: body.amountCents,
+            reason: "ADJUSTMENT",
+            label: body.label,
+            note: body.note,
+            actorId: req.user!.id,
+          },
+        });
+      });
+    }
+
+    recordAudit(req, {
+      action: AUDIT_ACTIONS.CREDIT_ADJUSTED,
+      subjectType: "user",
+      subjectId: userId,
+      subjectLabel: `${(body.amountCents / 100).toFixed(2)} MAD`,
+      details: { amountCents: body.amountCents, label: body.label, note: body.note },
+    });
+
+    res.json({ balanceCents: await creditBalance(userId) });
   }),
 );

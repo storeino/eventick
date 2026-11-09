@@ -37,6 +37,11 @@ export const AUDIT_ACTIONS = {
   ORDER_REFUND_RECONCILED: "order.refund.reconciled",
   /** Money actually sent back to a buyer, which CMI cannot do for us. */
   ORDER_REFUND_PAID: "order.refund.paid",
+
+  /** Staff granted or corrected store credit by hand. The automatic grants
+   *  from a cancellation are not audited here: they are already on the
+   *  credit ledger, which is append-only and is itself the record. */
+  CREDIT_ADJUSTED: "credit.adjusted",
   ORDER_CANCELLED: "order.cancelled",
   PAYOUT_CREATED: "payout.created",
   PAYOUT_PAID: "payout.paid",

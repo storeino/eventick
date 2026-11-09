@@ -12,6 +12,7 @@ import { invalidatePermissionCache, permissionListForRole } from "../lib/permiss
 import { AUDIT_ACTIONS, recordAudit } from "../lib/audit.js";
 import { planRemoval, removeUser } from "../lib/user-admin.js";
 import { normaliseRib, ribOk } from "../domain/commission.js";
+import { creditStatement } from "../lib/credit.js";
 
 export const authRouter = Router();
 
@@ -521,5 +522,24 @@ authRouter.delete(
     });
 
     res.json({ ok: true, mode: result.mode });
+  }),
+);
+
+
+// ─── Store credit ────────────────────────────────────────────────────────
+
+/**
+ * GET /auth/me/credit — the holder's balance and every movement behind it.
+ *
+ * The statement, not just the number. A balance with no history cannot
+ * answer "where did this come from", which is the first thing someone asks
+ * about money that appeared in their account — and the entries are the
+ * authoritative thing anyway: the balance is their sum.
+ */
+authRouter.get(
+  "/me/credit",
+  authenticate,
+  asyncHandler(async (req, res) => {
+    res.json(await creditStatement(req.user!.id));
   }),
 );

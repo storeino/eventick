@@ -1,6 +1,7 @@
 import { prisma } from "./prisma.js";
 import { HttpError } from "./http.js";
 import { refundOrder } from "./refund.js";
+import { grantCredit } from "./credit.js";
 import { sendEmail } from "./email.js";
 import { logger } from "./logger.js";
 
@@ -34,6 +35,13 @@ export interface CancelResult {
   refunded: number;
   /** Total returned to buyers, in cents. */
   refundedCents: number;
+  /** Orders converted to store credit. */
+  credited: number;
+  /** Total credit granted, in cents. */
+  creditedCents: number;
+  /** Paid orders with no account to credit — a guest checkout. These still
+   *  need a bank reversal, because there is no balance to put anything on. */
+  guestOrders: number;
   /** Orders that could not be refunded, with the reason. */
   failed: { orderId: string; reason: string }[];
   /** Tickets voided, including comps — nobody gets in to a cancelled event. */
@@ -97,7 +105,17 @@ export async function cancelEvent(
    */
   const paid = await prisma.order.findMany({
     where: { eventId: event.id, status: "PAID", totalCents: { gt: 0 } },
-    select: { id: true, totalCents: true, refundedCents: true, email: true, holderName: true },
+    select: {
+      id: true,
+      totalCents: true,
+      refundedCents: true,
+      email: true,
+      holderName: true,
+      /* Who to credit. A guest order has no account, so there is no balance
+         to put credit on — those fall back to the bank-reversal queue, which
+         is the only thing that can reach someone without an account. */
+      customerId: true,
+    },
   });
 
   const result: CancelResult = {
@@ -105,6 +123,9 @@ export async function cancelEvent(
     slug: event.slug,
     refunded: 0,
     refundedCents: 0,
+    credited: 0,
+    creditedCents: 0,
+    guestOrders: 0,
     failed: [],
     ticketsVoided: 0,
     notified: 0,
@@ -116,7 +137,42 @@ export async function cancelEvent(
       // gets the remainder rather than being refunded twice.
       const refund = await refundOrder(order.id, null);
       result.refunded += 1;
-      result.refundedCents += refund.refundedCents - order.refundedCents;
+      const movedCents = refund.refundedCents - order.refundedCents;
+      result.refundedCents += movedCents;
+
+      /*
+       * Convert the refund to store credit.
+       *
+       * refundOrder has recorded the DECISION and voided the tickets, but it
+       * cannot move money — CMI has no refund API, so a bank reversal waits
+       * on somebody working the back office by hand. Credit does not: it is
+       * spendable the moment this row lands, which is the entire reason it
+       * exists.
+       *
+       * The grant is keyed (orderId, EVENT_CANCELLED) by a unique index, so
+       * re-running a cancellation that failed halfway cannot double anyone's
+       * balance.
+       *
+       * A guest order has no account and so no balance. Counted rather than
+       * failed: the order is still in the bank-reversal queue, which is the
+       * only way to reach a buyer with no account, and reporting it as an
+       * error on the cancellation screen would be a false alarm.
+       */
+      if (order.customerId) {
+        const granted = await grantCredit({
+          userId: order.customerId,
+          amountCents: movedCents > 0 ? movedCents : order.totalCents,
+          reason: "EVENT_CANCELLED",
+          label: `Annulation — ${event.titleFr}`,
+          orderId: order.id,
+        });
+        if (granted) {
+          result.credited += 1;
+          result.creditedCents += granted.amountCents;
+        }
+      } else {
+        result.guestOrders += 1;
+      }
     } catch (err) {
       // One bad order must not strand the rest. Collected so somebody can
       // finish these by hand rather than discovering them from complaints.
@@ -157,12 +213,17 @@ export async function cancelEvent(
     // get one email, not four.
     const recipients = [...new Map(paid.map((o) => [o.email.toLowerCase(), o])).values()];
     for (const buyer of recipients) {
+      // Credited buyers are told their balance is ready NOW; a guest is told
+      // the money is coming back, because for them it still is a bank
+      // reversal. Sending the credit wording to someone with no account
+      // would point them at a balance screen they cannot reach.
+      const credited = Boolean(buyer.customerId);
       // Fire-and-forget per buyer. A mail failure must not undo a refund that
       // already happened, and must not stop the next buyer being told.
       void sendEmail({
         to: buyer.email,
         subject: `Annulation — ${event.titleFr}`,
-        html: cancelHtml(event.titleFr, buyer.holderName, reason.trim()),
+        html: cancelHtml(event.titleFr, buyer.holderName, reason.trim(), credited),
       }).catch((err) => logger.warn({ err, orderId: buyer.id }, "cancellation email failed"));
     }
     result.notified = recipients.length;
@@ -173,6 +234,9 @@ export async function cancelEvent(
       eventId: event.id,
       refunded: result.refunded,
       refundedCents: result.refundedCents,
+      credited: result.credited,
+      creditedCents: result.creditedCents,
+      guestOrders: result.guestOrders,
       failed: result.failed.length,
       ticketsVoided: result.ticketsVoided,
     },
@@ -181,16 +245,38 @@ export async function cancelEvent(
   return result;
 }
 
-/** Plain, short, and says the money is coming back. */
-function cancelHtml(title: string, holderName: string, reason: string): string {
+/**
+ * Plain, short, and true about where the money went.
+ *
+ * The old wording promised "remboursé intégralement … sous quelques jours
+ * ouvrés" to everyone. For a buyer with an account that is now wrong in the
+ * buyer's favour: their credit is spendable immediately and no bank is
+ * involved. For a guest it is still right, because a bank reversal is the
+ * only thing that can reach someone with no balance.
+ */
+function cancelHtml(
+  title: string,
+  holderName: string,
+  reason: string,
+  credited: boolean,
+): string {
+  const money = credited
+    ? `<p>Le montant que vous avez payé a été ajouté à votre <strong>solde Eventick</strong>. Il est disponible immédiatement et s'applique automatiquement à votre prochaine commande.</p>
+    <p><a href="${escapeHtml(siteUrl())}/billets" style="color:#0B7A75;font-weight:600">Voir mon solde</a></p>`
+    : `<p>Le montant que vous avez payé vous est remboursé intégralement. Selon votre banque, il peut apparaître sur votre compte sous quelques jours ouvrés.</p>`;
   return `<div style="font-family:system-ui,sans-serif;line-height:1.6">
     <h2 style="margin:0 0 12px">Annulation de ${escapeHtml(title)}</h2>
     <p>Bonjour ${escapeHtml(holderName)},</p>
     <p><strong>${escapeHtml(title)}</strong> a été annulé. Vos billets ne sont plus valables.</p>
     <p><strong>Motif :</strong> ${escapeHtml(reason)}</p>
-    <p>Le montant que vous avez payé vous est remboursé intégralement. Selon votre banque, il peut apparaître sur votre compte sous quelques jours ouvrés.</p>
+    ${money}
     <p style="color:#5f5f6b;font-size:13px">Eventick.ma</p>
   </div>`;
+}
+
+/** Where the balance screen lives, for the link in the email. */
+function siteUrl(): string {
+  return process.env.SITE_URL?.replace(/\/+$/, "") || "https://eventick.ma";
 }
 
 function escapeHtml(value: string): string {
