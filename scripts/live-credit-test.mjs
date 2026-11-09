@@ -359,6 +359,51 @@ async function main() {
     "queued",
   );
 
+  section("A credited buyer is never ALSO paid by bank");
+  /*
+   * The double-pay bug, pinned down.
+   *
+   * A cancellation grants credit and leaves refundedCents set, because
+   * refundOrder is what voids the tickets and records the decision. The
+   * bank-reversal queue selected on refundedCents alone, so the same buyer
+   * appeared there too — and an admin working that queue would have sent
+   * them the money a SECOND time, once as spendable credit and once by
+   * transfer. Found by asking what the old path still does, not by any test.
+   */
+  const bankQueue = await call("GET", "/api/platform/refunds/pending", { token: admin });
+  check(
+    "a credited order is not in the bank queue",
+    !bankQueue.data.refunds.some((r) => r.orderId === o2.id),
+    "absent",
+  );
+  const creditedOrder = await prisma.order.findFirst({
+    where: { customerId: custId, creditEntries: { some: { reason: "EVENT_CANCELLED" } } },
+    select: { id: true },
+  });
+  if (creditedOrder) {
+    const payAnyway = await call(`POST`, `/api/platform/refunds/${creditedOrder.id}/paid`, {
+      token: admin,
+      body: { reference: "SHOULD-BE-REFUSED" },
+    });
+    check(
+      "and marking it paid by hand is refused outright",
+      payAnyway.status === 409,
+      `${payAnyway.status} ${String(payAnyway.data?.error ?? "").slice(0, 50)}`,
+    );
+    const bulkAnyway = await call("POST", "/api/platform/refunds/paid-bulk", {
+      token: admin,
+      body: { orderIds: [creditedOrder.id], reference: "SHOULD-BE-SKIPPED" },
+    });
+    check(
+      "a bulk run skips it rather than paying it",
+      bulkAnyway.data?.paid === 0 &&
+        bulkAnyway.data?.skipped?.[0]?.reason === "settled_as_credit",
+      `paid=${bulkAnyway.data?.paid} reason=${bulkAnyway.data?.skipped?.[0]?.reason}`,
+    );
+  } else {
+    check("a credited order exists to test against", false, "none found");
+  }
+
   section("Support can read one holder's statement");
   /* GET /platform/credit/:userId was shipped untested and unused -- no
      screen called it and no suite touched it. Support needs exactly this

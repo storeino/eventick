@@ -323,8 +323,40 @@ async function main() {
      * transaction in the back office. Nothing listed what was outstanding,
      * so a buyer owed money depended on somebody remembering.
      */
+    /*
+     * A GUEST order, deliberately.
+     *
+     * A registered buyer is now settled as STORE CREDIT when an event is
+     * cancelled -- spendable immediately, no bank involved -- so their order
+     * is excluded from this queue on purpose. Paying them here as well would
+     * hand them the same money twice.
+     *
+     * A guest has no account and so no balance, which leaves the bank
+     * reversal as the only way to reach them. That is what this queue is for
+     * now, and what this section must therefore test.
+     */
     const event = await makeEvent("owed", orgaId);
-    const orderId = await buy(event, 2);
+    const guest = await prisma.order.create({
+      data: {
+        eventId: event.id,
+        customerId: null,
+        status: "PAID",
+        holderName: "Invite Rembourse",
+        email: `refund-policy-guest-${SUFFIX}@example.com`,
+        phone: "0600000000",
+        subtotalCents: 60000,
+        totalCents: 60000,
+        accessToken: `tok-refund-policy-${SUFFIX}`,
+        paymentRef: "MOCK-GUEST",
+        /* A gateway reference, as a real card order carries.
+           Without one the mark-as-paid route refuses: with no CMI charge to
+           reverse and no RIB on file there is nowhere for the money to go,
+           which is the guard that stops "paid" being recorded for a payment
+           nobody could make. A guest who paid by card has this. */
+        gatewayRef: `CMI-GUEST-${SUFFIX}`,
+      },
+    });
+    const orderId = guest.id;
     await call("POST", `/api/organiser/events/${event.slug}/cancel`, {
       token: organiser,
       body: { reason: "Test remboursement" },

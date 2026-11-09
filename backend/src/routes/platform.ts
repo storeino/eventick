@@ -696,7 +696,28 @@ platformRouter.get(
   requirePermission("finance.refund"),
   asyncHandler(async (_req, res) => {
     const orders = await prisma.order.findMany({
-      where: { refundedCents: { gt: 0 }, refundPaidAt: null },
+      where: {
+        refundedCents: { gt: 0 },
+        refundPaidAt: null,
+        /*
+         * Not the ones already settled as store credit.
+         *
+         * A cancellation grants credit AND leaves refundedCents set, because
+         * refundOrder is what voids the tickets and records the decision.
+         * Without this the same buyer appeared here too, so an admin working
+         * the queue would send them the money a SECOND time — once as credit
+         * they can already spend, once by bank transfer. Verified: before
+         * this filter a credited order showed up with its full amount and
+         * isGuest false.
+         *
+         * Keyed on the ledger rather than on a flag: the credit entry is the
+         * fact that the buyer was paid, and a boolean beside it could drift
+         * from it. A guest order has no account and so no entry, which is
+         * exactly right — it still needs the bank reversal, and still
+         * appears here.
+         */
+        creditEntries: { none: { reason: "EVENT_CANCELLED" } },
+      },
       select: {
         id: true,
         refundedCents: true,
@@ -827,9 +848,24 @@ platformRouter.post(
         email: true,
         event: { select: { titleFr: true } },
         customer: { select: { bankAccount: { select: { rib: true } } } },
+        /** Whether this was already settled as store credit — see below. */
+        creditEntries: { where: { reason: "EVENT_CANCELLED" }, select: { id: true } },
       },
     });
     if (!order) throw new HttpError(404, "Order not found");
+    /*
+     * Refuse to record a bank transfer for money already given as credit.
+     *
+     * The queue filters these out, but a page open since before the
+     * cancellation would still show the row, and the click has to be safe —
+     * this is the one that would pay the same buyer twice.
+     */
+    if (order.creditEntries.length > 0) {
+      throw new HttpError(
+        409,
+        "This refund was already settled as store credit — the buyer has the money and can spend it. Nothing is owed by bank transfer.",
+      );
+    }
     if (order.refundedCents <= 0) throw new HttpError(409, "This order has no refund to pay");
     // Guarded rather than overwritten: marking it twice would hide whichever
     // reference was recorded first, and that is the one someone reconciled.
@@ -952,6 +988,8 @@ platformRouter.post(
         email: true,
         event: { select: { titleFr: true } },
         customer: { select: { bankAccount: { select: { rib: true } } } },
+        /** Already settled as store credit — skipped, never paid again. */
+        creditEntries: { where: { reason: "EVENT_CANCELLED" }, select: { id: true } },
       },
     });
     const found = new Map(orders.map((o) => [o.id, o]));
@@ -975,6 +1013,12 @@ platformRouter.post(
         // normal way to finish it, and the rows that already went through
         // must be left with their original reference.
         skipped.push({ orderId: id, reason: "already_paid" });
+        continue;
+      }
+      if (order.creditEntries.length > 0) {
+        // Settled as store credit. Paying it by bank as well would hand the
+        // buyer the same money twice.
+        skipped.push({ orderId: id, reason: "settled_as_credit" });
         continue;
       }
       if (!order.gatewayRef && !order.customer?.bankAccount) {
