@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Check, ChevronDown, LayoutDashboard, LogOut, MapPin, Menu, Moon, Search, Sun, Tag, Ticket, User, X } from "lucide-react";
+import { Check, ChevronDown, LayoutDashboard, LogOut, MapPin, Menu, Moon, Search, Sun, Tag, Ticket, User, Wallet, X } from "lucide-react";
 import { useAuth } from "../../AuthContext";
 import { useCart } from "../../CartContext";
 import { useCatalog } from "../../useCatalog";
-import { money } from "../../api";
+import { api, money } from "../../api";
 import { categoryLabel, LOCALES, LOCALE_LABELS, useI18n } from "../../i18n";
 import { useTheme } from "../../ThemeContext";
 import { Button, IconButton, Input, Popover, PopoverItem } from "../../ui";
@@ -78,6 +78,37 @@ export function SiteHeader({ overlay = false }) {
   const { t, locale, setLocale } = useI18n();
   const { resolved, toggle } = useTheme();
   const { user, loading, logout, canUsePro } = useAuth();
+  /*
+   * Store credit, in the account menu.
+   *
+   * A balance behind an unopened tab is money the buyer does not know they
+   * have -- and this one arrives unannounced, when somebody else cancels
+   * their event. Showing the amount where they already look for their
+   * tickets is the difference between credit that gets spent and credit
+   * that sits there looking like the platform kept the money.
+   *
+   * Customers only: staff cannot buy, so a balance would be a figure they
+   * can never use.
+   */
+  const [creditCents, setCreditCents] = useState(0);
+  useEffect(() => {
+    if (!user || canUsePro) {
+      setCreditCents(0);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get("/auth/me/credit")
+      // Zero on failure: a stale or invented balance is worse than none,
+      // because it is spendable money.
+      .catch(() => ({ balanceCents: 0 }))
+      .then((data) => {
+        if (!cancelled) setCreditCents(data.balanceCents ?? 0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, canUsePro]);
   const { cart } = useCart();
   const { events } = useCatalog();
   const navigate = useNavigate();
@@ -472,6 +503,20 @@ export function SiteHeader({ overlay = false }) {
                       <Ticket className="size-4 shrink-0 text-muted" aria-hidden />
                       {t("account")}
                     </PopoverItem>
+                    {/* Only when there is a balance: a permanent "0.00 MAD"
+                        row is a line of nothing on every account that never
+                        had a cancellation behind it. */}
+                    {creditCents > 0 ? (
+                      <PopoverItem as={Link} to="/billets?tab=credit" onClick={close}>
+                        <Wallet className="size-4 shrink-0 text-muted" aria-hidden />
+                        <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                          <span className="min-w-0 truncate">{t("tabCredit")}</span>
+                          <span className="shrink-0 font-bold tabular-nums text-success">
+                            {money(creditCents)}
+                          </span>
+                        </span>
+                      </PopoverItem>
+                    ) : null}
                     {/* Resale lives here because it has nowhere else to go:
                         it was taken out of the top bar for width, and that
                         bar is lg-only anyway, so on a tablet this menu is
@@ -631,6 +676,18 @@ export function SiteHeader({ overlay = false }) {
                     {t("account")}
                   </Link>
                 </li>
+                {creditCents > 0 ? (
+                  <li>
+                    <Link
+                      to="/billets?tab=credit"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center justify-between gap-3 rounded-control px-3 py-3 text-[15px] font-semibold transition hover:bg-paper"
+                    >
+                      <span className="min-w-0 truncate">{t("tabCredit")}</span>
+                      <span className="shrink-0 tabular-nums text-success">{money(creditCents)}</span>
+                    </Link>
+                  </li>
+                ) : null}
                 {/* Staff only — same reasoning as the account popover's copy
                     of this link above. */}
                 {canUsePro ? (

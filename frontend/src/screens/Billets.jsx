@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Heart, History, Search, Send, Ticket as TicketIcon } from "lucide-react";
 import { toast } from "sonner";
 import { TicketPass, toTicketPassProps } from "../components/TicketPass";
@@ -134,7 +134,24 @@ function BilletsInner() {
   const { favorites } = useFavorites();
   const { events } = useCatalog();
   const [orders, setOrders] = useState(null);
-  const [tab, setTab] = useState("active");
+  /*
+   * The tab lives in the URL, not only in state.
+   *
+   * The cancellation email says "Voir mon solde" and links here. With the
+   * tab held in useState alone that link opened on Active tickets, so a
+   * buyer told their money was waiting arrived at a page with no balance on
+   * it and nothing saying where it went. /billets?tab=credit now opens on
+   * the balance, and the tab is shareable and survives a reload.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const TABS = ["active", "past", "saved", "credit", "bank"];
+  const urlTab = searchParams.get("tab");
+  const tab = TABS.includes(urlTab) ? urlTab : "active";
+  const setTab = (next) => {
+    // replace, not push: clicking through four tabs should not mean four
+    // presses of Back to leave the page.
+    setSearchParams(next === "active" ? {} : { tab: next }, { replace: true });
+  };
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(user?.name ?? "");
   const [transferId, setTransferId] = useState(null);

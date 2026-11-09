@@ -262,7 +262,7 @@ function cancelHtml(
 ): string {
   const money = credited
     ? `<p>Le montant que vous avez payé a été ajouté à votre <strong>solde Eventick</strong>. Il est disponible immédiatement et s'applique automatiquement à votre prochaine commande.</p>
-    <p><a href="${escapeHtml(siteUrl())}/billets" style="color:#0B7A75;font-weight:600">Voir mon solde</a></p>`
+    <p><a href="${escapeHtml(siteUrl())}/billets?tab=credit" style="color:#0B7A75;font-weight:600">Voir mon solde</a></p>`
     : `<p>Le montant que vous avez payé vous est remboursé intégralement. Selon votre banque, il peut apparaître sur votre compte sous quelques jours ouvrés.</p>`;
   return `<div style="font-family:system-ui,sans-serif;line-height:1.6">
     <h2 style="margin:0 0 12px">Annulation de ${escapeHtml(title)}</h2>

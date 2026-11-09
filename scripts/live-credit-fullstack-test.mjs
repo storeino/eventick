@@ -26,6 +26,7 @@
  *   cd backend && npx tsx ../scripts/live-credit-fullstack-test.mjs
  */
 
+import fs from "fs";
 import { prisma } from "../backend/src/lib/prisma.js";
 
 const WEB = process.env.WEB_URL ?? "http://localhost:3100";
@@ -224,10 +225,25 @@ async function main() {
     ["/billets", "My tickets (holds the balance tab)"],
     ["/explorer", "Browse events"],
     ["/paiement", "Checkout (holds the credit toggle)"],
+    /* The exact URL the cancellation email sends buyers to.
+       It said "Voir mon solde" and pointed at bare /billets, which opens on
+       Active tickets -- so a buyer told their money was waiting arrived at a
+       page with no balance on it. The tab is in the URL now, and this pins
+       the link down. */
+    ["/billets?tab=credit", "The balance link from the cancellation email"],
   ]) {
     const r = await page(path);
     check(`${label} — ${path}`, r.status === 200, `${r.status}`);
   }
+
+  /* The email must point at the tab, not the page. Read out of the SHIPPED
+     module rather than retyped, so a later edit to the template is caught. */
+  const cancelSrc = fs.readFileSync("../backend/src/lib/event-cancel.ts", "utf8");
+  check(
+    "the cancellation email links straight to the balance tab",
+    cancelSrc.includes("/billets?tab=credit"),
+    cancelSrc.includes("/billets?tab=credit") ? "ok" : "still links to bare /billets",
+  );
 
   section("The credit UI is in the bundle the browser downloads");
   /* Pulled from the served JS, not from source. A string present in the repo
