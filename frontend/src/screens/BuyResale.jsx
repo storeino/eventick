@@ -8,7 +8,7 @@ import { api, money } from "../api";
 import { useAuth } from "../AuthContext";
 import { Badge, Button, Container, Field, Input, Skeleton } from "../ui";
 import { useI18n } from "../i18n";
-import { emailOk, phoneOk } from "../payment";
+import { phoneOk } from "../payment";
 import { intlLocaleTag } from "../utils";
 
 /**
@@ -39,8 +39,19 @@ export default function BuyResale() {
 
   const [listing, setListing] = useState(null);
   const [error, setError] = useState(null);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  /*
+   * Name and email are the ACCOUNT's, not fields.
+   *
+   * Buying a resold seat requires a session (authenticate on the route), so
+   * by the time this form renders the server already knows who this is. Two
+   * empty boxes asking for a name and an address it holds were busywork,
+   * and worse: they were editable, so the ticket could be issued in a name
+   * the account never claimed and the confirmation sent somewhere the
+   * buyer does not read.
+   *
+   * Phone is still asked. It is not on the user record, and CMI wants it
+   * with the card payment.
+   */
   const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [cmi, setCmi] = useState(null);
@@ -58,13 +69,6 @@ export default function BuyResale() {
       .catch((err) => setError(err.status === 410 ? t("resaleGone") : err.message));
   }, [token, t]);
 
-  // Prefill from the account, exactly as Checkout does — the buyer has
-  // already told us who they are by signing in.
-  useEffect(() => {
-    if (!user) return;
-    setName((prev) => prev || user.name || "");
-    setEmail((prev) => prev || user.email || "");
-  }, [user]);
 
   const eventTitle = listing
     ? (locale === "ar" ? listing.eventTitleAr : listing.eventTitleFr) || listing.eventTitleFr
@@ -75,15 +79,15 @@ export default function BuyResale() {
 
   const buy = async () => {
     if (busy) return;
-    if (name.trim().length < 3) return toast.error(t("errName"));
-    if (!emailOk(email)) return toast.error(t("errEmail"));
     if (!phoneOk(phone)) return toast.error(t("errPhone"));
 
     setBusy(true);
     try {
       const res = await api.post(`/resale/${token}/buy`, {
-        holderName: name.trim(),
-        email: email.trim(),
+        // From the signed-in account. The server ignores these and reads the
+        // session anyway; sending them keeps the request shape it validates.
+        holderName: (user?.name ?? "").trim(),
+        email: (user?.email ?? "").trim(),
         phone: phone.trim(),
         locale,
       });
@@ -204,18 +208,16 @@ export default function BuyResale() {
               </div>
             ) : (
               <div className="mt-5 grid gap-3">
-                <Field label={t("fullName")} required>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("fullName")} />
-                </Field>
-                <Field label={t("email")} required>
-                  <Input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="nom@exemple.ma"
-                  />
-                </Field>
-                <Field label={t("phone")} required>
+                {/* Who this seat is for, stated rather than asked. The
+                    account is already signed in, so these are facts, not
+                    questions -- and leaving them editable let a buyer put
+                    someone else's name on a ticket their own account owns. */}
+                <div className="rounded-control border border-line/10 bg-paper px-3 py-2.5">
+                  <p className="text-xs text-muted">{t("resaleBuyerIs")}</p>
+                  <p className="mt-0.5 truncate font-semibold text-ink">{user?.name}</p>
+                  <p className="truncate text-sm text-muted">{user?.email}</p>
+                </div>
+                <Field label={t("phone")} required hint={t("resalePhoneHint")}>
                   <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="06 12 34 56 78" />
                 </Field>
                 <Button full size="lg" loading={busy} onClick={buy}>

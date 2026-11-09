@@ -116,9 +116,25 @@ if (listed.status === 200 || listed.status === 201) {
   const buyerToken = await login(buyerEmail, "buyer12345");
   const buy = await call("POST", `/api/resale/${listing.token}/buy`, {
     token: buyerToken,
-    body: { holderName: "Acheteur Revente", email: buyerEmail, phone: "0611111111" },
+    /* Deliberately a name and address the account does NOT own.
+       Buying requires a session, so the server takes the buyer from
+       req.user and must ignore these -- otherwise a signed-in buyer could
+       put any name on a seat their own account owns, and send the
+       confirmation somewhere they never read. */
+    body: { holderName: "Nom Invente", email: "spoof@example.com", phone: "0611111111" },
   });
   check("the resale sells", buy.status === 200 || buy.status === 201, `${buy.status}`);
+
+  const buyerOrder = await prisma.order.findFirst({
+    where: { customer: { email: buyerEmail } },
+    orderBy: { createdAt: "desc" },
+    select: { holderName: true, email: true },
+  });
+  check(
+    "the order is in the ACCOUNT's name, not the one that was posted",
+    buyerOrder?.email === buyerEmail && buyerOrder?.holderName !== "Nom Invente",
+    `${buyerOrder?.holderName} <${buyerOrder?.email}>`,
+  );
 
   const after = await balance();
   check(

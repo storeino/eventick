@@ -100,8 +100,16 @@ resaleRouter.get(
 );
 
 const buySchema = z.object({
-  holderName: z.string().min(3),
-  email: z.string().email(),
+  /*
+   * Accepted but NOT trusted. The route requires a session, so the account
+   * already names the buyer -- taking these from the body let a signed-in
+   * buyer put any name on a seat their own account owns, and send the
+   * confirmation to an address they do not read. The handler reads req.user
+   * instead; these stay optional only so an older client that still sends
+   * them is not rejected.
+   */
+  holderName: z.string().optional(),
+  email: z.string().optional(),
   phone: z.string(),
   /** Which language CMI should render its hosted card page in. */
   locale: z.enum(["fr", "en", "ar"]).optional(),
@@ -143,8 +151,16 @@ resaleRouter.post(
         customerId: req.user!.id,
         eventId: listing.ticket.order.eventId,
         status: "PENDING",
-        holderName: body.holderName.trim(),
-        email: body.email.trim(),
+        /*
+         * From the SESSION, not the request body.
+         *
+         * Buying a resold seat requires an account, so the buyer name and
+         * address are already known and are not the client to assert. The
+         * phone is still taken from the body: it is not on the user record,
+         * and CMI wants it with the card payment.
+         */
+        holderName: req.user!.name,
+        email: req.user!.email,
         phone: body.phone.trim(),
         subtotalCents: listing.priceCents,
         discountCents: 0,
