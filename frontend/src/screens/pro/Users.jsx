@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, RefreshCw, ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
+import { Check, RefreshCw, ShieldCheck, Trash2, UserPlus, Wallet, X } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "../../api";
+import { api, money } from "../../api";
 import { useAuth } from "../../AuthContext";
 import { useI18n } from "../../i18n";
 import { longDate } from "../../utils";
@@ -76,6 +76,66 @@ export default function Users() {
   // Create-user form. Kept in this screen rather than on its own route: it
   // is one POST, and landing back on the directory with the new row visible
   // is the confirmation that it worked.
+  /* The holder whose balance is being read, and the adjustment being typed.
+     Store credit had no admin screen at all: support could only reach it
+     with curl, which is not something you ask a support agent to do while a
+     buyer is on the phone disputing an amount. */
+  const [creditFor, setCreditFor] = useState(null);
+  const [creditData, setCreditData] = useState(null);
+  const [creditAmount, setCreditAmount] = useState("");
+  const [creditLabel, setCreditLabel] = useState("");
+  const [creditNote, setCreditNote] = useState("");
+  const [creditBusy, setCreditBusy] = useState(false);
+
+  /** Open one holder's statement. Fetched on demand: a balance for every
+      row would be a query per user on a page that lists fifty. */
+  const openCredit = async (u) => {
+    setCreditFor(u);
+    setCreditData(null);
+    setCreditAmount("");
+    setCreditLabel("");
+    setCreditNote("");
+    try {
+      setCreditData(await api.get(`/platform/credit/${u.id}`));
+    } catch (err) {
+      toast.error(err.message);
+      // The dialog stays OPEN with an empty state: one that vanishes on
+      // click reads as a broken button.
+      setCreditData({ balanceCents: 0, entries: [], failed: true });
+    }
+  };
+
+  /* Apply an adjustment.
+     The amount is typed in DIRHAMS and converted here -- asking support to
+     type cents is how a 50 MAD goodwill gesture becomes 0.50. */
+  const submitCredit = async (event) => {
+    event.preventDefault();
+    const dirhams = Number(creditAmount.replace(",", "."));
+    if (!Number.isFinite(dirhams) || dirhams === 0) {
+      toast.error(t.creditAmountInvalid);
+      return;
+    }
+    setCreditBusy(true);
+    try {
+      const result = await api.post(`/platform/credit/${creditFor.id}/adjust`, {
+        amountCents: Math.round(dirhams * 100),
+        label: creditLabel.trim(),
+        note: creditNote.trim(),
+      });
+      toast.success(t.creditAdjusted.replace("{balance}", money(result.balanceCents)));
+      // Re-read rather than patching the number locally: the ledger is the
+      // authority, and a locally-computed total could disagree with it.
+      setCreditData(await api.get(`/platform/credit/${creditFor.id}`));
+      setCreditAmount("");
+      setCreditLabel("");
+      setCreditNote("");
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setCreditBusy(false);
+    }
+  };
+
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(null);
@@ -377,6 +437,17 @@ export default function Users() {
                   </span>
                   {isSelf ? <InfoTip text={t.cannotChangeOwnRole} /> : null}
 
+                  {/* Store credit. Shown for every row including admins:
+                      reading a balance is harmless, and the server gates the
+                      adjustment itself on finance.refund. */}
+                  <IconBtn
+                    label={`${t.creditTitle} — ${u.name ?? u.email}`}
+                    title={t.creditTitle}
+                    onClick={() => openCredit(u)}
+                  >
+                    <Wallet className="size-4" />
+                  </IconBtn>
+
                   {/* Hidden for yourself and for another admin, matching the
                       server's own guards — a button that always 403s is worse
                       than no button. */}
@@ -401,6 +472,103 @@ export default function Users() {
       )}
 
       <Pager page={page} pages={pages} onPage={setPage} limit={limit} onLimit={setLimit} labels={{ rows: t.rows, prev: t.prev, next: t.next }} />
+
+      {/* ── Store credit ────────────────────────────────────────────────
+          The statement AND the correction in one dialog, because they are
+          one job: support reads what happened, then fixes it. Splitting
+          them would mean looking the person up twice. */}
+      <Modal
+        open={creditFor !== null}
+        onClose={() => setCreditFor(null)}
+        title={t.creditTitle}
+        sub={creditFor ? (creditFor.name ?? creditFor.email) : undefined}
+        size="md"
+        footer={
+          <Btn variant="secondary" onClick={() => setCreditFor(null)}>
+            {t.closeBtn}
+          </Btn>
+        }
+      >
+        {creditData === null ? (
+          <p className="text-sm text-muted">{t.loading}</p>
+        ) : (
+          <div className="grid gap-4">
+            <div className="rounded-card border border-line/10 bg-paper p-4">
+              <p className="text-sm text-muted">{t.creditBalanceLabel}</p>
+              <p className="mt-1 text-2xl font-black text-ink">
+                {money(creditData.balanceCents)} <span className="text-base font-bold">MAD</span>
+              </p>
+            </div>
+
+            {/* The ledger. The balance above is its sum -- showing the
+                number without the rows is the thing that cannot answer
+                "where did my credit go". */}
+            {creditData.entries?.length ? (
+              <div className="grid max-h-64 gap-1.5 overflow-y-auto">
+                {creditData.entries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-control border border-line/10 px-3 py-2 text-sm"
+                  >
+                    <span className="min-w-0 flex-1 break-words">{entry.label}</span>
+                    <span className="shrink-0 text-xs text-muted">{longDate(entry.createdAt, locale)}</span>
+                    <span
+                      className={`shrink-0 font-bold tabular-nums ${
+                        entry.amountCents < 0 ? "text-muted" : "text-success"
+                      }`}
+                    >
+                      {entry.amountCents < 0 ? "−" : "+"}
+                      {money(Math.abs(entry.amountCents))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted">{t.creditNoEntries}</p>
+            )}
+
+            {/* The correction. In DIRHAMS, not cents: asking support to type
+                cents is how a 50 MAD gesture becomes 0.50. Negative takes
+                credit away, and the server refuses anything that would push
+                the balance below zero. */}
+            <form className="grid gap-3 border-t border-line/10 pt-4" onSubmit={submitCredit}>
+              <p className="text-sm font-bold">{t.creditAdjustTitle}</p>
+              <Field label={t.creditAmountLabel} hint={t.creditAmountHint}>
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={creditAmount}
+                    inputMode="decimal"
+                    placeholder="50"
+                    onChange={(e) => setCreditAmount(e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label={t.creditLabelLabel} hint={t.creditLabelHint}>
+                {(props) => (
+                  <Input {...props} value={creditLabel} onChange={(e) => setCreditLabel(e.target.value)} />
+                )}
+              </Field>
+              <Field label={t.creditNoteLabel} hint={t.creditNoteHint}>
+                {(props) => (
+                  <Input {...props} value={creditNote} onChange={(e) => setCreditNote(e.target.value)} />
+                )}
+              </Field>
+              <Btn
+                type="submit"
+                disabled={
+                  creditBusy ||
+                  !creditAmount.trim() ||
+                  creditLabel.trim().length < 3 ||
+                  creditNote.trim().length < 5
+                }
+              >
+                {t.creditApplyBtn}
+              </Btn>
+            </form>
+          </div>
+        )}
+      </Modal>
 
       {/* Declining is the one that needs words: the applicant sees this
           note on their own page, so refusing with no reason would leave

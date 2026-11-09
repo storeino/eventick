@@ -359,6 +359,32 @@ async function main() {
     "queued",
   );
 
+  section("Support can read one holder's statement");
+  /* GET /platform/credit/:userId was shipped untested and unused -- no
+     screen called it and no suite touched it. Support needs exactly this
+     when a buyer disputes a balance, so it is pinned down here. */
+  const staffView = await call("GET", `/api/platform/credit/${custId}`, { token: admin });
+  check("an admin can read a holder's statement", staffView.status === 200, `${staffView.status}`);
+  check(
+    "it names who the balance belongs to",
+    staffView.data?.user?.email === ACCOUNTS.customer.email,
+    staffView.data?.user?.email,
+  );
+  check(
+    "it agrees with what the holder sees",
+    staffView.data?.balanceCents === (await balance()),
+    `${staffView.data?.balanceCents} vs ${await balance()}`,
+  );
+  check(
+    "and its entries sum to that balance",
+    staffView.data.entries.reduce((s2, e) => s2 + e.amountCents, 0) === staffView.data.balanceCents,
+    "ok",
+  );
+  const missing = await call("GET", "/api/platform/credit/does-not-exist", { token: admin });
+  check("an unknown user is a 404, not an empty balance", missing.status === 404, `${missing.status}`);
+  const nosy = await call("GET", `/api/platform/credit/${custId}`, { token: customer });
+  check("a customer cannot read it", nosy.status === 403, `${nosy.status}`);
+
   section("Staff can correct a balance, but never below zero");
   const tooMuch = await call("POST", `/api/platform/credit/${custId}/adjust`, {
     token: admin,
