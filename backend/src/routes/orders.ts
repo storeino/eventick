@@ -642,7 +642,22 @@ ordersRouter.post(
         // `<orderId>-<attempt>`; the callback strips the suffix to find the
         // order again.
         reference: buildOid(order.id, attempt.payAttempts),
-        totalCents: order.totalCents,
+        /*
+         * What the CARD owes: the total LESS any credit already spent on
+         * this order.
+         *
+         * This sent order.totalCents, so a partially covered order took
+         * the credit out of the balance AND charged the full price to the
+         * card -- the buyer paid twice for the part their balance had
+         * already settled. Full cover never reached here (it returns above
+         * at creditApplied >= totalCents), which is why it went unseen:
+         * the only broken case was the one in between.
+         *
+         * creditApplied is what the transaction above actually spent, not
+         * what the client asked for, so a request claiming credit it does
+         * not have cannot reduce what CMI is told to charge.
+         */
+        totalCents: order.totalCents - creditApplied,
         email: order.email,
         holderName: order.holderName,
         phone: order.phone,

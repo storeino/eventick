@@ -586,7 +586,15 @@ export default function Checkout() {
                     <CmiRedirect
                       action={payment.action}
                       fields={payment.fields}
-                      dueCents={due}
+                      /* What the CARD pays, not the order total. With
+                         credit covering part of it these differ, and this
+                         said `due` -- so a partially covered order offered
+                         to charge the full price, contradicting the summary
+                         three inches to its right. The server signs the
+                         real figure into the CMI form either way; this is
+                         the label, and a label that disagrees with the
+                         amount about to be taken is the worst kind. */
+                      dueCents={cardDue}
                       onLeave={onLeaveForGateway}
                     />
                   ) : (
@@ -652,8 +660,34 @@ export default function Checkout() {
                 {/* ── Store credit ───────────────────────────────────────
                     Only when there is some. An always-visible toggle reading
                     "0 MAD available" is a permanent row of nothing on every
-                    checkout that never had a cancellation behind it. */}
-                {creditCents > 0 ? (
+                    checkout that never had a cancellation behind it.
+
+                    And only BEFORE the payment intent exists. The amount is
+                    decided server-side at /pay; ticking this afterwards
+                    recomputed the summary to "0,00 — no card needed" while
+                    the panel beside it still offered the old full-price CMI
+                    redirect, because no new request had been sent. The page
+                    contradicted itself and the buyer was sent to pay for
+                    something their balance already covered.
+
+                    Shown as a read-only line once that moment has passed,
+                    rather than hidden, so the buyer can still see whether
+                    their balance was applied to what they are about to
+                    pay. */}
+                {creditCents > 0 && payment ? (
+                  <p className="mt-3 flex min-w-0 items-start gap-2.5 rounded-control border border-stage-fg/15 p-3 text-sm">
+                    <span className="min-w-0">
+                      <span className="font-semibold">{t("creditUse")}</span>
+                      <span className="ms-1 tabular-nums text-stage-muted">
+                        ({money(creditCents)} MAD)
+                      </span>
+                      <span className="ms-1 font-semibold text-stage-muted">
+                        — {useCredit ? t("creditOn") : t("creditOff")}
+                      </span>
+                    </span>
+                  </p>
+                ) : null}
+                {creditCents > 0 && !payment ? (
                   <label className="mt-3 flex min-w-0 cursor-pointer items-start gap-2.5 rounded-control border border-stage-fg/15 p-3 transition hover:border-stage-fg/30">
                     {/* The shared CheckOption is NOT used here: it hardcodes
                         text-ink and hover:bg-paper for a light surface, and
