@@ -137,10 +137,22 @@ if (listed.status === 200 || listed.status === 201) {
   );
 
   const after = await balance();
+  /*
+   * Net of the platform fee, read LIVE rather than assumed.
+   *
+   * This asserted the full listed price, which only held while the fee was
+   * zero. The fee is a configurable setting now, so an admin changing it in
+   * the back office broke this test without breaking anything in the app --
+   * the seller was always paid the right amount.
+   */
+  const settings = await call("GET", "/api/platform/settings", { token: admin });
+  const feeBps = settings.data?.resaleFeeBps ?? 0;
+  const expectedFee = Math.round((listing.priceCents * feeBps) / 10000);
+  const expectedSeller = listing.priceCents - expectedFee;
   check(
     "the seller is paid into their BALANCE, not a bank",
-    after - before === listing.priceCents,
-    `${mad(before)} -> ${mad(after)} (+${mad(after - before)})`,
+    after - before === expectedSeller,
+    `${mad(before)} -> ${mad(after)} (+${mad(after - before)}, fee ${feeBps / 100}% = ${mad(expectedFee)})`,
   );
 
   const queue = await call("GET", "/api/platform/refunds/pending", { token: admin });

@@ -520,10 +520,22 @@ async function main() {
       where: { id: sellerOrder.id },
       select: { refundedCents: true, totalCents: true },
     });
+    /*
+     * Net of the platform fee, which is NOT assumed to be zero.
+     *
+     * The comment above already says the rate is configurable and 0 until
+     * an admin sets one -- but this assertion was left demanding the full
+     * face value, so setting any rate in the back office broke it while the
+     * app kept paying the seller exactly the right amount. The fee is read
+     * from the order the sale recorded it on, not recomputed, so this holds
+     * at any rate including a rate changed after the fact.
+     */
+    /* resaleOrder was already fetched above, with feeCents on it. */
+    const expected = sellerAfter.totalCents - (resaleOrder.feeCents ?? 0);
     check(
-      "the seller was refunded their face value",
-      sellerAfter.refundedCents === sellerAfter.totalCents,
-      `${mad(sellerAfter.refundedCents)} of ${mad(sellerAfter.totalCents)}`,
+      "the seller was refunded their face value, less the platform fee",
+      sellerAfter.refundedCents === expected,
+      `${mad(sellerAfter.refundedCents)} of ${mad(sellerAfter.totalCents)} (fee ${mad(resaleOrder.feeCents ?? 0)})`,
     );
   }
 
