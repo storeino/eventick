@@ -51,6 +51,8 @@ export default function Checkout() {
    * for a password that does not exist. That was the dead end this fixes.
    */
   const [settingPassword, setSettingPassword] = useState(false);
+  /* Asking for a reset link, from the password field below. */
+  const [forgotBusy, setForgotBusy] = useState(false);
 
   /* Store credit. Opt-in, not automatic: someone holding 400 MAD from a
      cancelled festival may want to keep it for the rescheduled date rather
@@ -224,6 +226,32 @@ export default function Checkout() {
       toast.success(t("promoOk"));
     } catch {
       toast.error(t("promoBad"));
+    }
+  };
+
+  /*
+   * Ask for a reset link without leaving the checkout.
+   *
+   * The seats are held for fifteen minutes, so sending the buyer away to
+   * their inbox is how a sale is lost: they come back to an expired hold
+   * and start again, if they come back. The request fires from here and the
+   * reset page opens in ANOTHER tab, leaving this one -- and its countdown,
+   * and everything typed into it -- exactly where it was.
+   */
+  const askForReset = async () => {
+    if (forgotBusy) return;
+    const address = (user?.email ?? guestEmail).trim();
+    if (!emailOk(address)) return toast.error(t("errEmail"));
+    setForgotBusy(true);
+    try {
+      await api.post("/auth/forgot-password", { email: address, locale: locale === "ar" ? "ar" : "fr" });
+      /* The same message whether or not that address has an account: the
+         server deliberately will not say, and neither should this. */
+      toast.success(t("forgotSent"), { duration: 8000 });
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setForgotBusy(false);
     }
   };
 
@@ -488,14 +516,29 @@ export default function Checkout() {
                       className="md:col-span-2"
                     >
                       {(props) => (
-                        <Input
-                          {...props}
-                          type="password"
-                          value={guestPassword}
-                          onChange={(e) => setGuestPassword(e.target.value)}
-                          autoComplete={settingPassword ? "new-password" : "current-password"}
-                          minLength={settingPassword ? MIN_PASSWORD : undefined}
-                        />
+                        <>
+                          <Input
+                            {...props}
+                            type="password"
+                            value={guestPassword}
+                            onChange={(e) => setGuestPassword(e.target.value)}
+                            autoComplete={settingPassword ? "new-password" : "current-password"}
+                            minLength={settingPassword ? MIN_PASSWORD : undefined}
+                          />
+                        {/* Only where a password is being ENTERED. Offering a
+                            reset to someone choosing their first one would be
+                            an invitation to a round trip they do not need. */}
+                        {needsPassword ? (
+                          <button
+                            type="button"
+                            onClick={askForReset}
+                            disabled={forgotBusy}
+                            className="mt-2 text-start text-xs font-semibold text-muted underline underline-offset-2 hover:text-ink disabled:opacity-50"
+                          >
+                            {forgotBusy ? t("forgotSending") : t("forgotPassword")}
+                          </button>
+                        ) : null}
+                        </>
                       )}
                     </Field>
                   ) : null}

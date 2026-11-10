@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Shell } from "../components/Shell";
+import { api } from "../api";
 import { useAuth } from "../AuthContext";
 import { useI18n } from "../i18n";
 import { emailOk, phoneOk } from "../payment";
@@ -37,6 +38,34 @@ export default function Login() {
   const clearErrors = () => {
     setFieldErrors({});
     setError(null);
+  };
+
+  /*
+   * "Forgot password?", which did not exist.
+   *
+   * There was no route, no email and no link anywhere, so an account whose
+   * password had been forgotten was simply gone -- and at the checkout that
+   * wall arrived with a seat hold counting down.
+   */
+  const [forgotBusy, setForgotBusy] = useState(false);
+  const askForReset = async () => {
+    if (forgotBusy) return;
+    const address = email.trim();
+    if (!emailOk(address)) {
+      setFieldErrors({ email: t("errEmail") });
+      return;
+    }
+    setForgotBusy(true);
+    try {
+      await api.post("/auth/forgot-password", { email: address, locale: locale === "ar" ? "ar" : "fr" });
+      /* The same message whether or not that address has an account: the
+         server deliberately will not say, and neither should this. */
+      toast.success(t("forgotSent"), { duration: 8000 });
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setForgotBusy(false);
+    }
   };
 
   /*
@@ -245,6 +274,19 @@ export default function Login() {
                   </span>
                 )}
               </Field>
+              {/* Signing IN only. On the sign-up tab there is no account
+                  yet, so a reset link would be an answer to a question
+                  nobody asked. */}
+              {mode === "in" ? (
+                <button
+                  type="button"
+                  onClick={askForReset}
+                  disabled={forgotBusy}
+                  className="-mt-1 text-start text-xs font-semibold text-muted underline underline-offset-2 hover:text-ink disabled:opacity-50"
+                >
+                  {forgotBusy ? t("forgotSending") : t("forgotPassword")}
+                </button>
+              ) : null}
               {error ? (
                 <p role="alert" className="rounded-card bg-danger/10 px-4 py-3 text-sm font-semibold text-danger">
                   {error}

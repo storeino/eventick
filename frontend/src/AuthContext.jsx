@@ -50,6 +50,20 @@ export function AuthProvider({ children }) {
     return me;
   }, []);
 
+  /*
+   * Adopt a session the server has already issued.
+   *
+   * The password reset ends with a token and a user, exactly as login does,
+   * but there is nothing to post: the credential was the emailed link and
+   * it has just been spent. Without this the reset would have to send them
+   * to the login page to type the password they chose ten seconds ago.
+   */
+  const adoptSession = useCallback((token, me) => {
+    setToken(token);
+    setUser(me);
+    return me;
+  }, []);
+
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
@@ -93,7 +107,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, register, logout, refresh, canUsePro, canManageUsers, can, permissions }}
+      value={{ user, loading, login, register, adoptSession, logout, refresh, canUsePro, canManageUsers, can, permissions }}
     >
       {children}
     </AuthContext.Provider>

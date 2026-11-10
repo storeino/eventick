@@ -10,6 +10,7 @@ import ClaimShare from "./screens/ClaimShare";
 import BuyResale from "./screens/BuyResale";
 import Resales from "./screens/Resales";
 import Login from "./screens/Login";
+import ResetPassword from "./screens/ResetPassword";
 import Organiser from "./screens/Organiser";
 import BecomeOrganiser from "./screens/BecomeOrganiser";
 import Pro from "./screens/pro/Pro";
@@ -37,6 +38,9 @@ export default function App() {
           sold out and wants to know whether anyone is selling. */}
       <Route path="/reventes" element={<Resales />} />
       <Route path="/login" element={<Login />} />
+      {/* The token is in the PATH, not a query string, so it does not leak
+          through a Referer header when this page loads a font or an icon. */}
+      <Route path="/mot-de-passe/:token" element={<ResetPassword />} />
       <Route path="/organiser" element={<Organiser />} />
       <Route path="/devenir-organisateur" element={<BecomeOrganiser />} />
       <Route path="/pro/*" element={<Pro />} />

@@ -62,6 +62,59 @@ function siteUrl(): string {
   return process.env.SITE_URL?.replace(/\/+$/, "") || "https://eventick.ma";
 }
 
+export interface PasswordResetInput {
+  locale: Locale;
+  name: string;
+  /** The raw token. Built into the link here and stored nowhere. */
+  token: string;
+  /** How long the link lasts, in minutes, for the copy. */
+  ttlMinutes: number;
+}
+
+export function passwordResetSubject(input: PasswordResetInput): string {
+  return input.locale === "ar"
+    ? "إعادة تعيين كلمة المرور — Eventick"
+    : "Réinitialiser votre mot de passe — Eventick";
+}
+
+export function passwordResetHtml(input: PasswordResetInput): string {
+  const { locale } = input;
+  const ar = locale === "ar";
+  /*
+   * The token rides in the path, not a query string, so it does not end up
+   * in a Referer header when the reset page loads a font or an image.
+   */
+  const link = `${siteUrl()}/mot-de-passe/${encodeURIComponent(input.token)}`;
+  const align = ar ? "right" : "left";
+  return shell(
+    locale,
+    `<h1 style="margin:0 0 12px;font-size:20px;text-align:${align};">${
+      ar ? `مرحباً ${escapeHtml(input.name)}` : `Bonjour ${escapeHtml(input.name)}`
+    }</h1>
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;text-align:${align};">${
+      ar
+        ? "لقد طلبت إعادة تعيين كلمة المرور. اضغط على الزر أدناه لاختيار كلمة مرور جديدة."
+        : "Vous avez demandé à réinitialiser votre mot de passe. Cliquez ci-dessous pour en choisir un nouveau."
+    }</p>
+    <p style="margin:0 0 20px;text-align:center;">
+      <a href="${link}"
+         style="display:inline-block;padding:12px 28px;background:${ENCRE};color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;">${
+           ar ? "اختر كلمة مرور جديدة" : "Choisir un nouveau mot de passe"
+         }</a>
+    </p>
+    <p style="margin:0 0 8px;font-size:13px;color:${MUTED};text-align:${align};">${
+      ar
+        ? `ينتهي هذا الرابط بعد ${input.ttlMinutes} دقيقة ويُستعمل مرة واحدة.`
+        : `Ce lien expire dans ${input.ttlMinutes} minutes et ne sert qu'une fois.`
+    }</p>
+    <p style="margin:0;font-size:13px;color:${MUTED};text-align:${align};">${
+      ar
+        ? "إذا لم تطلب ذلك، تجاهل هذه الرسالة — كلمة المرور لم تتغير."
+        : "Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail : votre mot de passe n'a pas changé."
+    }</p>`,
+  );
+}
+
 export function orderConfirmationSubject(input: OrderEmailInput): string {
   return input.locale === "ar" ? `تذاكرك — ${input.eventTitle}` : `Vos billets — ${input.eventTitle}`;
 }

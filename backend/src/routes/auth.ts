@@ -14,6 +14,15 @@ import { planRemoval, removeUser } from "../lib/user-admin.js";
 import { normaliseRib, ribOk } from "../domain/commission.js";
 import { creditStatement } from "../lib/credit.js";
 import { phoneOk } from "../lib/payment-sim.js";
+import {
+  completeReset,
+  requestReset,
+  resolveReset,
+  RESET_TTL_MINUTES,
+} from "../lib/password-reset.js";
+import { MIN_PASSWORD_LENGTH } from "../lib/express-account.js";
+import { sendEmail } from "../lib/email.js";
+import { passwordResetHtml, passwordResetSubject } from "../lib/email-templates.js";
 
 export const authRouter = Router();
 
@@ -136,6 +145,96 @@ authRouter.post(
     const ok = await bcrypt.compare(body.password, user.passwordHash);
     if (!ok) throw new HttpError(401, "Invalid email or password");
 
+    const token = signToken({ sub: user.id, role: user.role });
+    res.json({ token, user: publicUser(user, await permissionsOf(user)) });
+  }),
+);
+
+const forgotSchema = z.object({
+  email: z.string().email(),
+  locale: z.enum(["fr", "ar"]).optional(),
+});
+
+authRouter.post(
+  "/forgot-password",
+  /*
+   * Rate limited like the other credential routes. Without it this is a
+   * free mail cannon: one request per address per second, sent from us, to
+   * anyone an attacker names.
+   */
+  authRateLimit,
+  asyncHandler(async (req, res) => {
+    const body = forgotSchema.parse(req.body);
+    const issued = await requestReset(body.email);
+
+    /*
+     * The SAME answer whether or not that address has an account.
+     *
+     * Saying "no account with that email" here would turn this route into a
+     * membership oracle: anyone could test a list of addresses against the
+     * customer base and learn who buys tickets, which is not ours to
+     * disclose. The buyer who did mistype their address finds out from the
+     * email that never arrives, which costs them a minute and costs everyone
+     * else their privacy back.
+     *
+     * requestReset also returns null for an account with no password set.
+     * That buyer is not locked out -- the checkout lets them choose one in
+     * place -- so a reset email would be a slower road to the same door.
+     */
+    if (issued) {
+      const user = await prisma.user.findUnique({
+        where: { email: body.email.trim().toLowerCase() },
+        select: { name: true, email: true },
+      });
+      if (user) {
+        const locale = body.locale ?? "fr";
+        await sendEmail({
+          to: user.email,
+          subject: passwordResetSubject({ locale, name: user.name, token: issued.token, ttlMinutes: RESET_TTL_MINUTES }),
+          html: passwordResetHtml({ locale, name: user.name, token: issued.token, ttlMinutes: RESET_TTL_MINUTES }),
+        });
+      }
+    }
+
+    res.json({ sent: true, ttlMinutes: RESET_TTL_MINUTES });
+  }),
+);
+
+/**
+ * Is this link still good?
+ *
+ * The reset page asks on load, so someone holding an expired link is told
+ * so before typing a new password into a form that cannot submit.
+ */
+authRouter.get(
+  "/reset-password/:token",
+  authRateLimit,
+  asyncHandler(async (req, res) => {
+    const { target } = await resolveReset(param(req, "token"));
+    // The address only, so the page can say whose account this is. No id,
+    // no role, nothing the holder of a leaked link could act on elsewhere.
+    res.json({ email: target.email, name: target.name, minPasswordLength: MIN_PASSWORD_LENGTH });
+  }),
+);
+
+const resetSchema = z.object({
+  password: z.string().min(MIN_PASSWORD_LENGTH),
+});
+
+authRouter.post(
+  "/reset-password/:token",
+  authRateLimit,
+  asyncHandler(async (req, res) => {
+    const body = resetSchema.parse(req.body);
+    const target = await completeReset(param(req, "token"), body.password);
+
+    /*
+     * Signed in on success, rather than sent to the login page to type the
+     * password they chose ten seconds ago. They proved the address by
+     * opening the link and have just set the credential; asking for it
+     * again proves nothing and is one more place to lose them.
+     */
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: target.userId } });
     const token = signToken({ sub: user.id, role: user.role });
     res.json({ token, user: publicUser(user, await permissionsOf(user)) });
   }),
