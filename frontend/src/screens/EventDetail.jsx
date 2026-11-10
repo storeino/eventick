@@ -577,9 +577,15 @@ export default function EventDetail() {
                   {t("staffNoBuy")}
                 </p>
               ) : (
+                /* inversePrimary, not primary: this sits on the recap
+                   card, which is bg-stage and therefore dark in BOTH
+                   themes. primary fills with --color-action, which is
+                   near-black in light mode -- the same colour as the card
+                   under it, so the main call to action disappeared. */
                 <Button
                   full
                   size="lg"
+                  variant="inversePrimary"
                   className="mt-4"
                   disabled={!count}
                   loading={booking}

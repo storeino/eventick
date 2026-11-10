@@ -511,7 +511,15 @@ export default function Home() {
               <Stat icon={<Repeat className="size-4" />} value="✓" label={t("statResale")} />
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Button size="lg" onClick={() => navigate(canUsePro ? "/organiser" : "/devenir-organisateur")}>
+              {/* inversePrimary: this band is bg-stage, dark in BOTH themes,
+                  so the theme-reactive primary fill turns near-black on
+                  near-black in light mode. Its sibling below already uses
+                  the quiet inverse for the same reason. */}
+              <Button
+                variant="inversePrimary"
+                size="lg"
+                onClick={() => navigate(canUsePro ? "/organiser" : "/devenir-organisateur")}
+              >
                 {t("createFree")}
               </Button>
               {/* The label follows the destination. This said "Démo

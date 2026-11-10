@@ -29,6 +29,20 @@ const VARIANTS = {
   // a photographic hero) regardless of app theme — stage-fg, not foam, which
   // flips with the theme and would turn this invisible-on-dark in dark mode.
   inverse: "bg-stage-fg/15 text-stage-fg backdrop-blur-sm hover:bg-stage-fg/25 border border-stage-fg/25",
+  /*
+   * The PRIMARY action on one of those dark surfaces.
+   *
+   * `primary` cannot be used there. It fills with --color-action, which is
+   * near-white in dark mode and near-BLACK in light mode — and a stage panel
+   * is #141418 in both. So in light mode the main call to action was a black
+   * pill on a black card: present, clickable, and invisible.
+   *
+   * `inverse` is the quiet version of the same idea, a translucent wash for
+   * a secondary control on a photo. A primary CTA needs the weight of a
+   * solid fill, so this is the opaque one: stage-fg (#ffffff in BOTH themes)
+   * with stage ink on top, which cannot flip into its own background.
+   */
+  inversePrimary: "bg-stage-fg text-stage hover:bg-stage-fg/90 shadow-sm border border-stage-fg",
 };
 
 const SIZES = {
