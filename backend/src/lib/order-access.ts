@@ -104,6 +104,7 @@ type OrderAuth = {
 export async function authoriseOrder(
   req: Request,
   order: { id: string; customerId: string | null; accessToken: string | null },
+  opts: { claimableIfOwnerless?: boolean } = {},
 ): Promise<OrderAuth> {
   // The signed-in owner first. Checked before the token so that a buyer who
   // has claimed their order gets viaSession even when their browser still
@@ -122,6 +123,37 @@ export async function authoriseOrder(
   // own rows" everywhere else in this codebase, so it means that here too.
   if (await userHasPermission(req.user, "scope.any")) {
     return { isBuyer: false, maySeeContact: true, viaSession: true };
+  }
+
+  /*
+   * An order that belongs to NOBODY, on a route that is about to give it an
+   * owner. Opt-in, and only /pay passes it.
+   *
+   * Express checkout made ownerless orders reachable again: /hold no longer
+   * requires a session, so a visitor's order has customerId null and its
+   * only credential is the accessToken handed back once, which the client
+   * keeps in localStorage. That store is best-effort -- CartContext and
+   * rememberOrderKey both swallow write failures -- so private browsing, a
+   * full quota, or a store cleared between picking seats and paying left the
+   * buyer holding their OWN order and getting "This order is not yours",
+   * with nothing on the page to do about it. The sign-up wall we removed was
+   * at least escapable.
+   *
+   * Safe because an ownerless PENDING order is not an asset: it carries no
+   * name, email or phone yet (/hold writes them blank), it reveals nothing
+   * about anybody, and the caller cannot read it back through this branch --
+   * /pay is a write that immediately stamps the payer as the owner. A
+   * stranger guessing the id could at most pay for seats and receive
+   * tickets in their own name, which is indistinguishable from buying them.
+   *
+   * The moment the order HAS an owner this branch stops applying, so it can
+   * never be used to reach a real buyer's order: that is the line above.
+   *
+   * viaSession stays false -- nothing here proved an account. Routes that
+   * refund or dispose of a seat demand that flag and are unaffected.
+   */
+  if (opts.claimableIfOwnerless && !order.customerId) {
+    return { isBuyer: true, maySeeContact: true, viaSession: false };
   }
 
   throw new HttpError(403, "This order is not yours");

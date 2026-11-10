@@ -410,7 +410,12 @@ ordersRouter.post(
     // Paying is a write: it attaches a name, email and phone to the order and
     // then issues tickets in that name. Without this, a stranger could put
     // their own details on someone else's held order.
-    await authoriseOrder(req, order);
+    //
+    // claimableIfOwnerless covers the visitor whose hold token did not
+    // survive to this request -- their own order, owned by nobody, which the
+    // block below is about to put in their name. An order with an owner is
+    // unaffected: see authoriseOrder for why this cannot reach one.
+    await authoriseOrder(req, order, { claimableIfOwnerless: true });
     if (order.status === "PAID") throw new HttpError(409, "Order is already paid");
     if (order.status !== "PENDING") throw new HttpError(409, "Order is no longer payable");
     if (order.holdUntil && order.holdUntil.getTime() < Date.now()) {
