@@ -63,11 +63,37 @@ import { EventTicker } from "./EventTicker";
 // field against the "Create an event" button, which is the one control the
 // header exists to push. It lives in the account popover and the mobile
 // drawer instead -- the same place Pro went, and for the same reason.
+/**
+ * Every nav destination. Used by the DRAWER, which has a column to itself
+ * and room for all of them.
+ */
 const NAV = [
   { to: "/explorer", key: "explore" },
   { to: "/explorer?cat=festivals", cat: "festivals" },
   { to: "/explorer?cat=nightlife", cat: "nightlife" },
 ];
+
+/**
+ * What the TOP BAR shows: Explore alone.
+ *
+ * The bar is a single row that must also hold the brand, the city picker, a
+ * search pill, the pink CTA and the account button, all with
+ * whitespace-nowrap. Three nav links do not fit beside that even at xl --
+ * "Soirées & clubbing" was overlapping the search box at ~1600px, which is
+ * a wide desktop, not a narrow one. Deferring the whole nav further up the
+ * breakpoints would just move the collision to a screen size nobody has.
+ *
+ * The categories are not lost: the drawer still lists them from NAV above,
+ * the footer links every category, and /explorer has its own filters --
+ * which is the page these links lead to anyway.
+ *
+ * Written out rather than sliced from NAV, because the drawer maps NAV and
+ * has been bitten by this before: taking Resale out of the top bar for width
+ * silently took it off phones too, where there is no popover to fall back
+ * on. A slice would also mean reordering NAV quietly changes what the bar
+ * shows. Two places with different room get two lists.
+ */
+const BAR_NAV = [{ to: "/explorer", key: "explore" }];
 
 /** A nav item's visible text: the category's own label, or a plain copy key. */
 function navLabel(item, t) {
@@ -307,7 +333,7 @@ export function SiteHeader({ overlay = false }) {
             yields space instead of forcing the row wider than the viewport
             when a locale makes these labels long. */}
         <nav aria-label={t("explore")} className="ms-2 hidden min-w-0 items-center gap-1 xl:flex">
-          {NAV.map((item) => {
+          {BAR_NAV.map((item) => {
             const active = `${pathname}${search}` === item.to || (item.to === "/explorer" && pathname === "/explorer" && !search);
             return (
               <Link
