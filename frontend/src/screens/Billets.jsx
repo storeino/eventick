@@ -7,6 +7,7 @@ import { EventCard } from "../components/EventCard";
 import { Shell } from "../components/Shell";
 import { Protected } from "../components/Protected";
 import { api, money } from "../api";
+import { phoneOk } from "../payment";
 import { useAuth } from "../AuthContext";
 import { useFavorites } from "../FavoritesContext";
 import { useCatalog } from "../useCatalog";
@@ -45,6 +46,9 @@ function BilletsInner() {
   };
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(user?.name ?? "");
+  /* The editor offered only a name, so a buyer who changed their number had
+     nowhere to say so and the stale one went to CMI with every purchase. */
+  const [phoneDraft, setPhoneDraft] = useState(user?.phone ?? "");
   const [transferId, setTransferId] = useState(null);
   /* Store credit: the balance and the movements behind it.
      The statement, not just a number -- "where did this come from" is the
@@ -84,12 +88,18 @@ function BilletsInner() {
 
   const nextLabel = days == null ? "" : days <= 0 ? t("nextToday") : days === 1 ? t("nextTomorrow") : tf("nextIn", { n: days });
 
-  const saveName = async (e) => {
+  const saveProfile = async (e) => {
     e.preventDefault();
     if (busy || nameDraft.trim().length < 2) return;
+    // Validated here as well as on the server, so the error lands on the
+    // field rather than as a toast after a round trip.
+    if (!phoneOk(phoneDraft)) {
+      toast.error(t("errPhone"));
+      return;
+    }
     setBusy(true);
     try {
-      await api.patch("/auth/me", { name: nameDraft.trim() });
+      await api.patch("/auth/me", { name: nameDraft.trim(), phone: phoneDraft.trim() });
       await refresh?.();
       setEditingName(false);
       toast.success(t("profileSaved"));
@@ -435,11 +445,33 @@ function BilletsInner() {
           <article className="rounded-card border border-line/10 bg-card p-4 shadow-card">
             <h2 className="font-display text-xl font-bold">{t("edit")}</h2>
             {editingName ? (
-              <form className="mt-3 grid gap-2" onSubmit={saveName}>
+              <form className="mt-3 grid gap-2" onSubmit={saveProfile}>
                 {/* Was unlabelled: a screen reader announced only "edit text",
                     with no indication of what it edits. */}
                 <Field label={t("fullName")} required>
                   {(props) => <Input {...props} value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} autoComplete="name" />}
+                </Field>
+                <Field label={t("phone")} required>
+                  {(props) => (
+                    <Input
+                      {...props}
+                      type="tel"
+                      value={phoneDraft}
+                      onChange={(e) => setPhoneDraft(e.target.value)}
+                      autoComplete="tel"
+                      placeholder="06 12 34 56 78"
+                    />
+                  )}
+                </Field>
+                {/* The email is shown and NOT editable. It is the login
+                    identifier and the address every ticket and refund notice
+                    goes to, so changing it is an account-recovery flow with a
+                    confirmation step, not a text field -- and a silent change
+                    would let someone who borrowed a session lock the owner
+                    out. Shown rather than hidden so the editor is not
+                    mysteriously missing the thing people look for. */}
+                <Field label={t("email")} hint={t("emailLocked")}>
+                  {(props) => <Input {...props} value={user?.email ?? ""} readOnly disabled />}
                 </Field>
                 <div className="flex gap-2">
                   <button type="submit" disabled={busy} className="h-11 flex-1 rounded-full bg-action text-sm font-semibold text-action-fg transition hover:bg-action-hover disabled:opacity-50">
@@ -456,6 +488,7 @@ function BilletsInner() {
                 className="mt-3 text-sm font-semibold text-primary"
                 onClick={() => {
                   setNameDraft(user?.name ?? "");
+                  setPhoneDraft(user?.phone ?? "");
                   setEditingName(true);
                 }}
               >

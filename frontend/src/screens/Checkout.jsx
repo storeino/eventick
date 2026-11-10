@@ -213,9 +213,14 @@ export default function Checkout() {
     e.preventDefault();
     if (busy) return;
     const next = {};
-    // Name and email are the account's; the server reads them from the
-    // session and ignores anything sent here.
-    if (!phoneOk(phone)) next.phone = t("errPhone");
+    /* Name and email are the account's; the server reads them from the
+       session and ignores anything sent here.
+
+       The phone is only validated when it is actually asked for. An account
+       that already has one submits nothing, and the server falls back to the
+       stored number -- demanding a valid value for a hidden field would make
+       the button do nothing with no visible reason why. */
+    if (!user?.phone && !phoneOk(phone)) next.phone = t("errPhone");
     setErrors(next);
     if (Object.keys(next).length) return;
 
@@ -230,7 +235,11 @@ export default function Checkout() {
         // ignores these; sending them keeps the request shape it validates.
         holderName: (user?.name ?? "").trim(),
         email: (user?.email ?? "").trim(),
-        phone: phone.trim(),
+        /* Omitted when the field was not shown. Sending "" would fail the
+           phoneOk check on the server, where leaving it out falls through
+           to the number already on the account -- which is the whole point
+           of not asking for it. */
+        ...(phone.trim() ? { phone: phone.trim() } : {}),
         locale,
         useCredit,
       });
@@ -340,22 +349,30 @@ export default function Checkout() {
                     <p className="mt-0.5 truncate font-semibold">{user?.name}</p>
                     <p className="truncate text-sm text-stage-muted">{user?.email}</p>
                   </div>
-                  {/* The phone is still asked when the account has none: it
-                      was only ever stored on the order, so accounts created
-                      before it moved to the profile have nothing to reuse.
-                      Once given it is saved, and this stops appearing. */}
-                  <Field label={t("phone")} error={errors.phone} required className="md:col-span-2">
-                    {(props) => (
-                      <Input
-                        {...props}
-                        type="tel"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        autoComplete="tel"
-                        placeholder="06 12 34 56 78"
-                      />
-                    )}
-                  </Field>
+                  {/* Asked ONLY when the account has no number.
+                      It is collected at sign-up now, so this is empty for
+                      almost nobody: accounts created before the column
+                      existed have nothing to reuse, and they are asked here
+                      once. What they type is saved to the account, so the
+                      field does not come back on their next purchase.
+
+                      Everyone else sees no field at all -- which is the
+                      point: a form that asks for what it already knows is
+                      the thing being removed. */}
+                  {user?.phone ? null : (
+                    <Field label={t("phone")} error={errors.phone} required className="md:col-span-2">
+                      {(props) => (
+                        <Input
+                          {...props}
+                          type="tel"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          autoComplete="tel"
+                          placeholder="06 12 34 56 78"
+                        />
+                      )}
+                    </Field>
+                  )}
 
                   <div className="md:col-span-2">
                     <Button type="submit" full size="lg" loading={busy}>

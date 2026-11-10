@@ -50,10 +50,25 @@ const loginSchema = z.object({
  * frontend would read as "no permissions" and quietly hide every control.
  */
 function publicUser(
-  user: { id: string; name: string; email: string; role: string },
+  user: { id: string; name: string; email: string; phone?: string | null; role: string },
   permissions: string[],
 ) {
-  return { id: user.id, name: user.name, email: user.email, role: user.role, permissions };
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    /*
+     * Sent so the checkout knows whether it still has to ask.
+     *
+     * Null for accounts created before the column existed; those are asked
+     * once more at their next purchase and it is saved from there. Without
+     * this the client cannot tell "no number on file" from "not loaded",
+     * and would show the field to everyone forever.
+     */
+    phone: user.phone ?? null,
+    role: user.role,
+    permissions,
+  };
 }
 
 /** The caller's permission list, or [] for a role that somehow isn't valid. */
@@ -134,14 +149,57 @@ authRouter.get(
   }),
 );
 
-const updateMeSchema = z.object({ name: z.string().min(2) });
+/*
+ * What a person may change about themselves.
+ *
+ * Name AND phone: the profile editor offered only the name, so a buyer who
+ * changed their number had nowhere to say so and the stale one went to CMI
+ * with every purchase.
+ *
+ * Email is deliberately NOT here. It is the login identifier and the
+ * address every ticket and refund notice is sent to, so changing it is an
+ * account-recovery flow with a confirmation step, not a text field — and a
+ * silent change would let someone who borrowed a session lock the owner out
+ * of their own account.
+ *
+ * Both optional, so a client can send either alone without having to echo
+ * back the value it is not changing.
+ */
+const updateMeSchema = z
+  .object({
+    name: z.string().min(2).optional(),
+    phone: z.string().optional(),
+  })
+  /*
+   * strict(), so an unknown key is a 400 rather than silently dropped.
+   *
+   * Sending { email } used to return 200 with nothing changed, which reads
+   * as success — a client could believe the address had been updated and
+   * tell the user so. Refusing says plainly that this is not the route for
+   * it. (Changing an email is an account-recovery flow with a confirmation
+   * step; see the note above.)
+   */
+  .strict();
 
 authRouter.patch(
   "/me",
   authenticate,
   asyncHandler(async (req, res) => {
     const body = updateMeSchema.parse(req.body);
-    const user = await prisma.user.update({ where: { id: req.user!.id }, data: { name: body.name } });
+    // Checked with the same helper sign-up and checkout use, so the three
+    // cannot disagree about what a Moroccan number looks like.
+    if (body.phone !== undefined && !phoneOk(body.phone)) {
+      throw new HttpError(400, "Invalid phone number");
+    }
+    const user = await prisma.user.update({
+      where: { id: req.user!.id },
+      // Only what was sent: a PATCH that wrote undefined over an unsent
+      // field would blank the number every time somebody renamed themselves.
+      data: {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.phone !== undefined ? { phone: body.phone.trim() } : {}),
+      },
+    });
     res.json({ user: publicUser(user, await permissionsOf(user)) });
   }),
 );
