@@ -130,7 +130,14 @@ const buySchema = z.object({
    */
   holderName: z.string().optional(),
   email: z.string().optional(),
-  phone: z.string(),
+  /*
+   * Optional, because the account usually already has it.
+   *
+   * It was required, so a signed-in buyer whose account carried a number
+   * was asked for it again on every resale -- the very thing User.phone
+   * was added to stop, fixed at the ordinary checkout and missed here.
+   */
+  phone: z.string().optional(),
   /** Which language CMI should render its hosted card page in. */
   locale: z.enum(["fr", "en", "ar"]).optional(),
 });
@@ -163,7 +170,14 @@ resaleRouter.post(
   refuseStaffPurchase,
   asyncHandler(async (req, res) => {
     const body = buySchema.parse(req.body);
-    if (!phoneOk(body.phone)) throw new HttpError(400, "Invalid phone number");
+    /*
+     * Checked below instead, once the account is known: a buyer whose
+     * account holds a number sends nothing, and rejecting the empty body
+     * here would make the button do nothing with no visible reason why.
+     */
+    if (body.phone !== undefined && !phoneOk(body.phone)) {
+      throw new HttpError(400, "Invalid phone number");
+    }
 
     const listing = await resolveListing(param(req, "token"));
     if (!listing) throw new HttpError(410, "This listing is no longer available");
@@ -182,7 +196,11 @@ resaleRouter.post(
           const resolved = await resolveExpressAccount({
             holderName: body.holderName ?? "",
             email: body.email ?? "",
-            phone: body.phone,
+            /* A VISITOR has no account to fall back to, so the number must
+               come from the form. resolveExpressAccount rejects an empty
+               one, which is the right answer here: the account about to be
+               created needs a way to reach its buyer. */
+            phone: body.phone ?? "",
             password: body.password,
             newPassword: body.newPassword,
           });
@@ -221,6 +239,36 @@ resaleRouter.post(
       );
     }
 
+    /*
+     * The phone, in order of what is most likely to be current: what they
+     * just typed, then the account's own number.
+     *
+     * The body comes FIRST, as at /orders/:id/pay, because this is the one
+     * detail a buyer may legitimately want to change per order -- a
+     * different number for a seat they are collecting for someone else --
+     * and because accounts made before User.phone existed have none, so the
+     * form is still the only source for them.
+     */
+    const buyerAccount = await prisma.user.findUnique({
+      where: { id: buyer.id },
+      select: { phone: true },
+    });
+    const buyerPhone = (body.phone ?? buyerAccount?.phone ?? "").trim();
+    if (!phoneOk(buyerPhone)) throw new HttpError(400, "Invalid phone number");
+
+    /*
+     * Remember it on the ACCOUNT, so it is asked once and not again.
+     *
+     * Only when the account has none -- an older account filling it in for
+     * the first time. A later purchase with a different number does not
+     * overwrite it: a one-off number for someone else's ticket is not a
+     * change of the account's own contact details. Same rule as
+     * /orders/:id/pay, so buying through either door has the same effect.
+     */
+    if (!buyerAccount?.phone) {
+      await prisma.user.update({ where: { id: buyer.id }, data: { phone: buyerPhone } });
+    }
+
     const order = await prisma.order.create({
       data: {
         customerId: buyer.id,
@@ -229,14 +277,14 @@ resaleRouter.post(
         /*
          * From the SESSION, not the request body.
          *
-         * Buying a resold seat requires an account, so the buyer name and
-         * address are already known and are not the client to assert. The
-         * phone is still taken from the body: it is not on the user record,
-         * and CMI wants it with the card payment.
+         * Buying a resold seat gives every order an account, so the buyer
+         * name and address are already known and are not the client's to
+         * assert. The phone follows the same order of trust the ordinary
+         * checkout uses -- see buyerPhone above.
          */
         holderName: buyer.name,
         email: buyer.email,
-        phone: body.phone.trim(),
+        phone: buyerPhone,
         subtotalCents: listing.priceCents,
         discountCents: 0,
         totalCents: listing.priceCents,

@@ -116,7 +116,11 @@ export default function BuyResale() {
 
   const buy = async () => {
     if (busy) return;
-    if (!phoneOk(phone)) return toast.error(t("errPhone"));
+    /* Only when the field was shown. An account that already has a number
+       submits nothing and the server falls back to it -- demanding a valid
+       value for a hidden field would make the button do nothing with no
+       visible reason why. */
+    if (!user?.phone && !phoneOk(phone)) return toast.error(t("errPhone"));
     if (!user) {
       if (guestName.trim().length < 3) return toast.error(t("errName"));
       if (!emailOk(guestEmail)) return toast.error(t("errEmail"));
@@ -135,7 +139,9 @@ export default function BuyResale() {
            these; for a visitor they are the account about to be created. */
         holderName: (user?.name ?? guestName).trim(),
         email: (user?.email ?? guestEmail).trim(),
-        phone: phone.trim(),
+        /* Omitted when the field was not shown: the server reads the
+           account instead. Sending "" would fail its check. */
+        ...(phone.trim() ? { phone: phone.trim() } : {}),
         ...(needsPassword && guestPassword ? { password: guestPassword } : {}),
         /* Set, not checked -- a different key for a different operation. */
         ...(settingPassword && guestPassword ? { newPassword: guestPassword } : {}),
@@ -354,9 +360,21 @@ export default function BuyResale() {
                     ) : null}
                   </>
                 )}
-                <Field label={t("phone")} required hint={t("resalePhoneHint")}>
-                  <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="06 12 34 56 78" />
-                </Field>
+                {/* Asked ONLY when the account has no number.
+                    It is collected at sign-up now, so this is empty for
+                    almost nobody: accounts created before the column
+                    existed have nothing to reuse, and they are asked here
+                    once. What they type is saved to the account, so the
+                    field does not come back on their next purchase.
+
+                    The ordinary checkout has done this since User.phone was
+                    added; this page kept asking everyone, every time, which
+                    is exactly the re-typing that change set out to end. */}
+                {user && user.phone ? null : (
+                  <Field label={t("phone")} required hint={t("resalePhoneHint")}>
+                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="06 12 34 56 78" />
+                  </Field>
+                )}
                 <Button full size="lg" loading={busy} onClick={buy}>
                   {t("resaleBuy")}
                 </Button>
