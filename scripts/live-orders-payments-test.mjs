@@ -463,13 +463,27 @@ async function main() {
       where: { id: buy.data.orderId },
       select: { totalCents: true, feeCents: true, feePlanKey: true },
     });
-    // THE gap this section exists for: both resale settlement paths set PAID
-    // directly instead of going through settleOrder, so the fee was never
-    // recorded and the platform brokered the sale for nothing.
+    /*
+     * THE gap this section exists for: both resale settlement paths set PAID
+     * directly instead of going through settleOrder, so the fee was never
+     * recorded and the platform brokered the sale for nothing.
+     *
+     * What is recorded CHANGED. It used to be the organiser's plan
+     * commission, which was wrong twice over: a resale moves an existing
+     * seat between two customers, so the organiser receives nothing from it
+     * and was being billed anyway -- their reported commission rose after a
+     * resale at a rate they were not on. It is now the PLATFORM's own resale
+     * fee, under the key "resale", and it is 0 until an admin sets a rate.
+     *
+     * So the assertion is the one that still holds at any rate: the fee is
+     * recorded (not null), and it is this platform charge rather than
+     * somebody's plan. live-resale-fee-test pins the arithmetic itself, at
+     * 0% and at 2%.
+     */
     check(
-      "the resale earned the platform its commission",
-      resaleOrder.feeCents === 3000,
-      `${resaleOrder.feeCents === null ? "NULL — resale is free" : mad(resaleOrder.feeCents)} on ${resaleOrder.feePlanKey}`,
+      "the resale fee is recorded, as a platform charge and not an organiser's plan",
+      resaleOrder.feeCents !== null && resaleOrder.feePlanKey === "resale",
+      `${resaleOrder.feeCents === null ? "NULL — never recorded" : mad(resaleOrder.feeCents)} on ${resaleOrder.feePlanKey}`,
     );
 
     const oldTicket = await prisma.ticket.findUnique({ where: { id: sellerTicket.id }, select: { status: true } });

@@ -4,6 +4,9 @@ import { HttpError } from "./http.js";
 import { makeTicketRef } from "../domain/ticketRef.js";
 import { refundOrder } from "./refund.js";
 import { grantCredit } from "./credit.js";
+import { platformTerms } from "./settings.js";
+import { recordResaleFee } from "./settle.js";
+import { splitResale } from "../domain/commission.js";
 import { logger } from "./logger.js";
 
 /**
@@ -241,24 +244,62 @@ export async function completeResale(
    * After the transaction: the buyer owns a working ticket either way, and a
    * payout failure must be visible rather than rolling back a completed sale.
    */
+  /*
+   * The platform's cut, taken from the SELLER's share.
+   *
+   * The buyer paid the listed price and that is the end of their side of it.
+   * The fee comes out of what goes back to the seller, so a buyer quoted 300
+   * is charged 300 -- the listing price stays the one number that means what
+   * it says.
+   *
+   * Read at settlement, not at listing. The rate is a platform term, and the
+   * figure that matters is the one in force when the money actually moved.
+   * It is then recorded on the order, so a later rate change cannot re-price
+   * a sale that already happened.
+   */
+  const { resaleFeeBps } = await platformTerms();
+  const { feeCents, sellerCents } = splitResale(listing.priceCents, resaleFeeBps);
+
+  /*
+   * Recorded on the BUYER's order, which is the row that represents this
+   * transaction. Written here rather than by the caller so both settlement
+   * paths — mock and the CMI callback — get the same figure from the same
+   * computation, instead of each deciding for itself.
+   */
+  await recordResaleFee(prisma, buyerOrderId, feeCents);
+
   try {
-    await refundOrder(listing.ticket.orderId, listing.priceCents);
+    /*
+     * The seller is refunded their NET, not the full face value.
+     *
+     * refundOrder is what records the amount against their original order,
+     * and that record is what the books read -- so the fee has to come off
+     * here rather than afterwards, or the order says the seller got 300 while
+     * their balance says 294.
+     */
+    await refundOrder(listing.ticket.orderId, sellerCents);
     if (listing.sellerId) {
       await grantCredit({
         userId: listing.sellerId,
-        amountCents: listing.priceCents,
+        amountCents: sellerCents,
         reason: "ORDER_REFUND",
         label: `Revente — ${listing.ticket.order.event.titleFr}`,
         orderId: listing.ticket.orderId,
       });
       logger.info(
-        { listingId, creditedCents: listing.priceCents, sellerId: listing.sellerId },
-        "resale complete, seller paid in store credit",
+        {
+          listingId,
+          priceCents: listing.priceCents,
+          feeCents,
+          creditedCents: sellerCents,
+          sellerId: listing.sellerId,
+        },
+        "resale complete, seller paid in store credit less the platform fee",
       );
     } else {
       logger.info(
-        { listingId, refunded: listing.priceCents },
-        "resale complete, guest seller owed a bank reversal",
+        { listingId, priceCents: listing.priceCents, feeCents, refunded: sellerCents },
+        "resale complete, guest seller owed a bank reversal less the platform fee",
       );
     }
   } catch (err) {

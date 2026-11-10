@@ -11,6 +11,7 @@ import { sendEmail } from "../lib/email.js";
 import { refundSentHtml, refundSentSubject } from "../lib/email-templates.js";
 import { logger } from "../lib/logger.js";
 import { creditBalance, creditStatement, grantCredit } from "../lib/credit.js";
+import { platformTerms, setPlatformTerms } from "../lib/settings.js";
 
 /**
  * The platform console — what someone running the marketplace needs, as
@@ -1306,5 +1307,73 @@ platformRouter.post(
     });
 
     res.json({ balanceCents: await creditBalance(userId) });
+  }),
+);
+
+
+// ─── Platform settings ───────────────────────────────────────────────────
+
+/**
+ * GET /platform/settings — the business terms an admin can change.
+ *
+ * finance.view, not finance.refund: reading the rate is not changing it, and
+ * anyone who can see the revenue figures needs to know what produced them.
+ */
+platformRouter.get(
+  "/settings",
+  requirePermission("finance.view"),
+  asyncHandler(async (_req, res) => {
+    res.json(await platformTerms());
+  }),
+);
+
+const settingsSchema = z.object({
+  /*
+   * Basis points, 0..10000. The same unit as Plan.rateBps, because a second
+   * unit for the same kind of number is how 2 becomes 2% in one place and
+   * 0.02% in another.
+   *
+   * 0 is valid and meaningful: no resale fee, which is the default and what
+   * the product did before this setting existed. The upper bound is 100% --
+   * above that the seller would owe money on their own sale, which the
+   * ledger has no concept of.
+   */
+  resaleFeeBps: z.number().int().min(0).max(10_000),
+});
+
+/**
+ * PUT /platform/settings — change the terms.
+ *
+ * finance.refund, not finance.view: this decides what the platform takes
+ * from a seller, which is the same class of act as moving money.
+ *
+ * A change applies to FUTURE resales only. The fee is recorded on each
+ * order when it settles and never recomputed, exactly as plan commission is
+ * — so lowering the rate cannot retroactively hand money back, and raising
+ * it cannot bill a seller more than they were told at the time.
+ */
+platformRouter.put(
+  "/settings",
+  requirePermission("finance.refund"),
+  asyncHandler(async (req, res) => {
+    const body = settingsSchema.parse(req.body ?? {});
+    const before = await platformTerms();
+    const after = await setPlatformTerms({ resaleFeeBps: body.resaleFeeBps }, req.user!.id);
+
+    recordAudit(req, {
+      action: AUDIT_ACTIONS.SETTINGS_CHANGED,
+      subjectType: "settings",
+      subjectId: "platform",
+      subjectLabel: `${(after.resaleFeeBps / 100).toFixed(2)}%`,
+      // Both figures: "changed to 2%" cannot be checked without knowing what
+      // it was, and that is the question asked when a payout looks wrong.
+      details: { from: before, to: after },
+    });
+
+    logger.info(
+      { fromBps: before.resaleFeeBps, toBps: after.resaleFeeBps, actorId: req.user!.id },
+      "platform settings changed",
+    );
+    res.json(after);
   }),
 );

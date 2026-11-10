@@ -75,6 +75,42 @@ export async function recordCommission(db: Db, orderId: string): Promise<void> {
 }
 
 /**
+ * Commission on a RESALE, which is a different charge from a first sale.
+ *
+ * recordCommission prices an order against the ORGANISER's plan, because a
+ * first sale is the organiser selling a seat. A resale is not: it moves an
+ * existing seat between two customers, and the organiser was already paid
+ * when that seat was first sold. Charging their plan again bills them for a
+ * transaction they receive nothing from — their reported commission used to
+ * rise after a resale, at a rate they were not on.
+ *
+ * So this uses the PLATFORM's own resale rate, and feePlanKey records
+ * "resale" rather than a plan the organiser is not being charged under.
+ *
+ * Idempotent on feeCents, exactly like recordCommission: a replayed webhook
+ * must not re-price a sale against a rate that changed since.
+ */
+export async function recordResaleFee(
+  db: Db,
+  orderId: string,
+  feeCents: number,
+): Promise<void> {
+  const order = await db.order.findUnique({
+    where: { id: orderId },
+    select: { id: true, feeCents: true },
+  });
+  if (!order) return;
+  if (order.feeCents !== null) return;
+  await db.order.update({
+    where: { id: order.id },
+    // "resale" rather than a plan key: nothing about an organiser's plan
+    // produced this figure, and recording one would make the fee impossible
+    // to explain later.
+    data: { feeCents, feePlanKey: "resale" },
+  });
+}
+
+/**
  * Settlement — the one place a successful payment turns into tickets.
  *
  * Both paths funnel through here so they can never drift: the CMI callback

@@ -205,3 +205,34 @@ export function betterPlanAt(
   }
   return best;
 }
+
+/**
+ * How a resale's money divides between the platform and the seller.
+ *
+ * The buyer pays the LISTED price — the fee comes out of the seller's share,
+ * not on top of the buyer's. A buyer quoted 300 and charged 306 at the last
+ * step is the surprise this avoids, and the listing price stays the one
+ * number that means what it says.
+ *
+ * Not the organiser's plan rate. A resale moves an existing seat between two
+ * customers; the organiser was already paid when that seat was first sold,
+ * so charging their plan again bills them for a transaction they receive
+ * nothing from.
+ *
+ * Rounded half-up to the cent ONCE, on the fee, and the seller gets the
+ * remainder. Rounding both halves independently is how 300.00 becomes
+ * 6.00 + 293.99 and a dirham vanishes from the books.
+ */
+export function splitResale(
+  priceCents: number,
+  feeBps: number,
+): { feeCents: number; sellerCents: number } {
+  // A free or negative listing has nothing to split. Guarded rather than
+  // trusted: sellerFaceValue can return 0 for a fully refunded order.
+  if (priceCents <= 0) return { feeCents: 0, sellerCents: 0 };
+  // Clamped, not trusted. 0 is a real setting (no fee); above 100% would
+  // pay the seller a negative amount, which the ledger has no concept of.
+  const bps = Math.min(Math.max(feeBps, 0), BPS_DIVISOR);
+  const feeCents = Math.round((priceCents * bps) / BPS_DIVISOR);
+  return { feeCents, sellerCents: priceCents - feeCents };
+}

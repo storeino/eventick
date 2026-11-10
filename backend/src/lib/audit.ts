@@ -42,6 +42,12 @@ export const AUDIT_ACTIONS = {
    *  from a cancellation are not audited here: they are already on the
    *  credit ledger, which is append-only and is itself the record. */
   CREDIT_ADJUSTED: "credit.adjusted",
+
+  /** Platform business terms changed, e.g. the resale fee percentage.
+   *  Recorded with BOTH the old and new values: "changed to 2%" cannot be
+   *  checked without knowing what it was, and that is the question asked
+   *  when a payout looks wrong. */
+  SETTINGS_CHANGED: "settings.changed",
   ORDER_CANCELLED: "order.cancelled",
   PAYOUT_CREATED: "payout.created",
   PAYOUT_PAID: "payout.paid",

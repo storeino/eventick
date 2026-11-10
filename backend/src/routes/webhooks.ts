@@ -189,10 +189,21 @@ webhooksRouter.post(
           return seatIsTheirs;
         }
         try {
-          // Same as the mock path: a resale is a sale, and this branch sets
-          // PAID itself rather than going through settleOrder, so the fee
-          // would otherwise never be recorded.
-          await recordCommission(prisma, order.id);
+          /*
+           * NOT recordCommission.
+           *
+           * That prices an order against the ORGANISER's plan, which is
+           * right for a first sale and wrong here: a resale moves an
+           * existing seat between two customers, and the organiser was
+           * already paid when that seat was first sold. Billing their plan
+           * again charged them for a transaction they receive nothing from,
+           * and their reported commission rose after a resale at a rate
+           * they were not on.
+           *
+           * completeResale records the PLATFORM's resale fee instead, from
+           * the same computation that decides what the seller is paid, so
+           * the two can never disagree.
+           */
           // Guarded on status LISTED inside, so a replay cannot transfer the
           // seat twice — and a listing cancelled or sold to someone else while
           // this buyer was paying throws, which must NOT take their money.

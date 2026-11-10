@@ -7,6 +7,7 @@ import {
   normaliseRib,
   ribOk,
   summariseRevenue,
+  splitResale,
   type PlanTerms,
 } from "../commission.js";
 
@@ -207,5 +208,62 @@ describe("monthsInPeriod", () => {
 describe("monthStart", () => {
   it("floors a date to its UTC month", () => {
     expect(monthStart(new Date("2026-07-19T13:45:00Z")).toISOString()).toBe("2026-07-01T00:00:00.000Z");
+  });
+});
+
+describe("splitResale", () => {
+  /* The headline case: a 2% fee on a 300 MAD ticket. The buyer pays the
+     listed 300, the platform keeps 6, the seller is credited 294. */
+  it("takes the fee from the seller, not from the buyer", () => {
+    expect(splitResale(30000, 200)).toEqual({ feeCents: 600, sellerCents: 29400 });
+  });
+
+  /* 0 is a real setting, and the default. It must mean "no fee", not
+     "fall back to something" -- the product had no resale fee before this
+     existed, and shipping it must not start charging anyone. */
+  it("charges nothing at 0 bps, and the seller keeps the whole price", () => {
+    expect(splitResale(30000, 0)).toEqual({ feeCents: 0, sellerCents: 30000 });
+  });
+
+  it("the two halves always add back to the listed price", () => {
+    for (const price of [1, 99, 100, 12345, 30000, 99999, 1_000_000]) {
+      for (const bps of [0, 1, 50, 200, 250, 999, 1000, 5000, 10000]) {
+        const { feeCents, sellerCents } = splitResale(price, bps);
+        expect(feeCents + sellerCents).toBe(price);
+        expect(feeCents).toBeGreaterThanOrEqual(0);
+        expect(sellerCents).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  /* Rounded half-up ONCE, on the fee, with the seller taking the remainder.
+     Rounding both halves independently is how 300.00 becomes 6.00 + 293.99
+     and a dirham vanishes from the books. */
+  it("rounds the fee half-up and gives the seller the remainder", () => {
+    // 2.5% of 99 cents = 2.475 -> 2
+    expect(splitResale(99, 250)).toEqual({ feeCents: 2, sellerCents: 97 });
+    // 2.5% of 101 cents = 2.525 -> 3
+    expect(splitResale(101, 250)).toEqual({ feeCents: 3, sellerCents: 98 });
+    // 50% of 1 cent = 0.5 -> 1 (half-up), seller keeps 0
+    expect(splitResale(1, 5000)).toEqual({ feeCents: 1, sellerCents: 0 });
+  });
+
+  it("never pays the seller a negative amount", () => {
+    // 100% is the ceiling: the seller gets nothing, never less than nothing.
+    expect(splitResale(30000, 10000)).toEqual({ feeCents: 30000, sellerCents: 0 });
+    // Above 100% is clamped rather than trusted — a mistyped setting must
+    // not invent a debt the ledger has no concept of.
+    expect(splitResale(30000, 25000)).toEqual({ feeCents: 30000, sellerCents: 0 });
+  });
+
+  it("treats a negative rate as no fee rather than a refund to the seller", () => {
+    expect(splitResale(30000, -500)).toEqual({ feeCents: 0, sellerCents: 30000 });
+  });
+
+  it("has nothing to split on a zero-value listing", () => {
+    // sellerFaceValue returns 0 for a fully refunded order, so this is
+    // reachable rather than theoretical.
+    expect(splitResale(0, 200)).toEqual({ feeCents: 0, sellerCents: 0 });
+    expect(splitResale(-100, 200)).toEqual({ feeCents: 0, sellerCents: 0 });
   });
 });

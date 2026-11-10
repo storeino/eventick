@@ -1315,3 +1315,50 @@ model CreditEntry {
   @@unique([orderId, reason])
   @@map("credit_entries")
 }
+
+// ---------------------------------------------------------------------------
+// Platform settings
+//
+// One row, id "platform". A table rather than env vars because these are
+// business terms an admin changes from the console, not deploy-time config:
+// an env change needs a restart and leaves no record of who changed what.
+//
+// Deliberately a SINGLETON rather than a key/value store. A key/value table
+// makes every read a string parse with no types and no defaults, and the
+// first typo is a silent zero. Named columns get the same checking as any
+// other model.
+// ---------------------------------------------------------------------------
+
+/// Platform-wide settings. Exactly one row, id "platform".
+model PlatformSettings {
+  /// Fixed id so there can only ever be one row. Not an autoincrement: a
+  /// second row would be ambiguous and nothing would say which one won.
+  id String @id @default("platform")
+
+  /// The platform's cut of a RESALE, in BASIS POINTS (200 = 2%).
+  ///
+  /// Integer basis points, exactly like Plan.rateBps, because a float rate
+  /// reintroduces the rounding drift that storing money in cents exists to
+  /// avoid.
+  ///
+  /// Taken from the SELLER, not added to the buyer: the price on the listing
+  /// is what the buyer pays, and the seller is credited the rest. A buyer
+  /// who is quoted 300 and charged 306 at the last step is the surprise this
+  /// avoids.
+  ///
+  /// 0 means no fee, which is the default and the behaviour the product had
+  /// before this setting existed.
+  ///
+  /// NOT the organiser's plan rate. A resale moves an existing seat between
+  /// two customers; the organiser was already paid when that seat was first
+  /// sold, so charging their plan again bills them for a transaction they
+  /// receive nothing from. It used to, and their reported commission rose
+  /// after a resale at a rate they were not on.
+  resaleFeeBps Int @default(0) @map("resale_fee_bps")
+
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  /// Who last changed these terms. Null for the seeded defaults.
+  updatedById String?  @map("updated_by_id")
+
+  @@map("platform_settings")
+}

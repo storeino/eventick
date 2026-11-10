@@ -88,6 +88,14 @@ export default function Platform() {
   const [bulkRef, setBulkRef] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
 
+  /* Platform terms. Held as the percentage STRING the admin types, not as
+     basis points: "2.5" has to survive being typed one character at a time,
+     and a number input that reformats mid-keystroke fights the person using
+     it. Converted on save. */
+  const [feePct, setFeePct] = useState("");
+  const [savedFeeBps, setSavedFeeBps] = useState(null);
+  const [feeBusy, setFeeBusy] = useState(false);
+
   const loadSellers = useCallback(() => {
     api
       .get("/platform/organisers")
@@ -100,6 +108,17 @@ export default function Platform() {
       .then((data) => setPlanRequests(data.requests))
       .catch(() => setPlanRequests([]));
   }, []);
+  const loadSettings = useCallback(() => {
+    api
+      .get("/platform/settings")
+      .then((data) => {
+        setSavedFeeBps(data.resaleFeeBps);
+        // Trailing zeros trimmed: 200 bps reads "2", not "2.00".
+        setFeePct(String(data.resaleFeeBps / 100));
+      })
+      .catch(() => setSavedFeeBps(null));
+  }, []);
+
   const loadRefunds = useCallback(() => {
     api
       .get("/platform/refunds/pending")
@@ -129,7 +148,8 @@ export default function Platform() {
     loadPayouts();
     loadPlanRequests();
     loadRefunds();
-  }, [loadSellers, loadPayouts, loadPlanRequests, loadRefunds]);
+    loadSettings();
+  }, [loadSellers, loadPayouts, loadPlanRequests, loadRefunds, loadSettings]);
 
   /*
    * Decide one. Approving assigns the plan server-side, so the seller list is
@@ -269,6 +289,38 @@ export default function Platform() {
     }
   };
 
+  /*
+   * Save the resale fee.
+   *
+   * Typed as a percentage and sent as basis points, because that is the
+   * unit the whole system stores rates in -- a second unit for the same
+   * number is how 2 becomes 2% in one place and 0.02% in another.
+   */
+  const saveFee = async (event) => {
+    event.preventDefault();
+    const pct = Number(feePct.replace(",", "."));
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      toast.error(t.plFeeInvalid);
+      return;
+    }
+    const bps = Math.round(pct * 100);
+    if (!Number.isInteger(bps)) {
+      toast.error(t.plFeeInvalid);
+      return;
+    }
+    setFeeBusy(true);
+    try {
+      const saved = await api.put("/platform/settings", { resaleFeeBps: bps });
+      setSavedFeeBps(saved.resaleFeeBps);
+      setFeePct(String(saved.resaleFeeBps / 100));
+      toast.success(t.plFeeSaved.replace("{n}", (saved.resaleFeeBps / 100).toFixed(2)));
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setFeeBusy(false);
+    }
+  };
+
   const submitBulkPaid = async (event) => {
     event.preventDefault();
     const reference = bulkRef.trim();
@@ -359,6 +411,53 @@ export default function Platform() {
 
       {tab === "overview" ? (
       <>
+      {/* ── Platform terms ──────────────────────────────────────────────
+          The one number the platform charges on a resale. Shown on
+          Overview rather than buried: it decides what every seller is
+          paid, and a rate nobody can find is a rate nobody checks. */}
+      {savedFeeBps !== null ? (
+        <form
+          className="mb-5 min-w-0 rounded-card border border-line/10 bg-card p-4 shadow-card"
+          onSubmit={saveFee}
+        >
+          <p className="font-bold">{t.plFeeTitle}</p>
+          <p className="mt-1 text-sm text-muted">{t.plFeeSub}</p>
+          <div className="mt-3 flex min-w-0 flex-wrap items-end gap-3">
+            <Field label={t.plFeeLabel} hint={t.plFeeHint}>
+              {(props) => (
+                <div className="flex items-center gap-2">
+                  <Input
+                    {...props}
+                    value={feePct}
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="w-28"
+                    onChange={(e) => setFeePct(e.target.value)}
+                  />
+                  <span className="shrink-0 font-bold text-muted">%</span>
+                </div>
+              )}
+            </Field>
+            <Button type="submit" className="shrink-0" disabled={feeBusy}>
+              {t.plFeeSave}
+            </Button>
+          </div>
+          {/* The arithmetic, worked, on the figure they just typed. A
+              percentage is abstract; "300 -> 294 to the seller" is the
+              thing they are actually deciding. */}
+          <p className="mt-3 text-sm text-muted">
+            {Number(feePct.replace(",", ".")) > 0
+              ? t.plFeeExample
+                  .replace("{fee}", money(Math.round(30000 * (Number(feePct.replace(",", ".")) / 100))))
+                  .replace(
+                    "{seller}",
+                    money(30000 - Math.round(30000 * (Number(feePct.replace(",", ".")) / 100))),
+                  )
+              : t.plFeeExampleZero}
+          </p>
+        </form>
+      ) : null}
+
       {!stats ? (
         <StatSkeletons count={4} />
       ) : (
