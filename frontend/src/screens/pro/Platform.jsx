@@ -422,16 +422,35 @@ export default function Platform() {
         >
           <p className="font-bold">{t.plFeeTitle}</p>
           <p className="mt-1 text-sm text-muted">{t.plFeeSub}</p>
+          {/* A percentage is two or three characters, so the control is
+              sized to that rather than to the card.
+
+              It used to stretch the full width with the % sign and Save
+              stranded at the far end: Input carries w-full from
+              CONTROL_BASE, and cn() here is a plain join rather than
+              tailwind-merge, so the w-28 passed to the input sat alongside
+              w-full and lost to it on source order -- silently, since both
+              classes were present and neither tool complained.
+
+              The width now lives on the Field, which is the thing that
+              should be narrow; the input filling it is exactly what w-full
+              is for. The hint stays OUT of the Field and under the whole
+              row, because it is a full sentence and would otherwise wrap
+              into a 9rem column. */}
           <div className="mt-3 flex min-w-0 flex-wrap items-end gap-3">
-            <Field label={t.plFeeLabel} hint={t.plFeeHint}>
+            <Field label={t.plFeeLabel} className="w-32 shrink-0 grow-0">
               {(props) => (
                 <div className="flex items-center gap-2">
                   <Input
                     {...props}
+                    /* The hint lives outside the Field now, so the tie
+                       between control and description is made by hand --
+                       without this a screen reader would read the box with
+                       no explanation of what 0 means. */
+                    describedBy="resale-fee-hint"
                     value={feePct}
                     inputMode="decimal"
                     placeholder="0"
-                    className="w-28"
                     onChange={(e) => setFeePct(e.target.value)}
                   />
                   <span className="shrink-0 font-bold text-muted">%</span>
@@ -442,6 +461,9 @@ export default function Platform() {
               {t.plFeeSave}
             </Button>
           </div>
+          <p id="resale-fee-hint" className="mt-2 text-[13px] text-muted">
+            {t.plFeeHint}
+          </p>
           {/* The arithmetic, worked, on the figure they just typed. A
               percentage is abstract; "300 -> 294 to the seller" is the
               thing they are actually deciding. */}
