@@ -46,6 +46,20 @@ export interface OrderEmailInput {
   orderId: string;
   totalCents: number;
   tickets: OrderEmailTicket[];
+  /*
+   * The order's access token, so the email can carry a link that works.
+   *
+   * This matters most for an account created AT checkout: it has no
+   * password yet, so this link is how the buyer reaches their tickets until
+   * they set one. Optional, because a confirmation for an order whose token
+   * is unknown is still worth sending — it simply has no button.
+   */
+  accessToken?: string | null;
+}
+
+/** Where this deployment lives, for links inside an email. */
+function siteUrl(): string {
+  return process.env.SITE_URL?.replace(/\/+$/, "") || "https://eventick.ma";
 }
 
 export function orderConfirmationSubject(input: OrderEmailInput): string {
@@ -94,6 +108,24 @@ export function orderConfirmationHtml(input: OrderEmailInput): string {
          <td style="text-align:${ar ? "left" : "right"};font-weight:800;font-size:16px;">${money(input.totalCents)} MAD</td>
        </tr>
      </table>
+     ${
+       /*
+        * The way back to these tickets, for someone with no password.
+        *
+        * An account created at checkout cannot be signed into yet, so this
+        * link IS their access: it carries the order's own token, which is
+        * what authorises reading it. Omitted when no token was passed
+        * rather than rendering a button that leads to a sign-in wall.
+        */
+       input.accessToken
+         ? `<p style="margin:20px 0 0;">
+              <a href="${siteUrl()}/confirmation/${encodeURIComponent(input.orderId)}?k=${encodeURIComponent(input.accessToken)}"
+                 style="display:inline-block;padding:12px 20px;background:${LAGON};color:#ffffff;border-radius:999px;font-weight:700;text-decoration:none;">
+                ${ar ? "عرض تذاكري" : "Voir mes billets"}
+              </a>
+            </p>`
+         : ""
+     }
      <p style="margin:20px 0 0;font-size:12px;color:${MUTED};">
        ${ar ? "أظهر رمز QR عند الدخول." : "Présentez le QR code à l'entrée."}
        ${ar ? "رقم الطلب" : "Commande"} <span style="font-family:monospace;">${escapeHtml(input.orderId)}</span>

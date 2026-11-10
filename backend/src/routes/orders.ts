@@ -14,6 +14,7 @@ import { withSerializableRetry } from "../lib/serializable.js";
 import { markClaimed, offerFreedSeats, resolveClaim } from "../lib/waitlist.js";
 import { authoriseOrder, authoriseOrderOrOrganiser, newAccessToken } from "../lib/order-access.js";
 import { creditBalance, spendCredit } from "../lib/credit.js";
+import { resolveExpressAccount } from "../lib/express-account.js";
 import { logger } from "../lib/logger.js";
 
 export const ordersRouter = Router();
@@ -49,20 +50,24 @@ const holdSchema = z.object({
 ordersRouter.post(
   "/hold",
   /*
-   * An account is required to buy. Guest checkout is closed.
+   * A session is OPTIONAL here, and every order still ends up owned.
    *
-   * It used to be `optionalAuth`: anyone could hold seats with a name, an
-   * email and a phone number, and the order carried `customerId: null`.
-   * Requiring a session gives every new order a real owner, which is what
-   * makes "my tickets", refunds and transfers answerable to a person rather
-   * than to whoever is holding a link.
+   * Requiring one was right about the destination and wrong about the
+   * moment. It sent a stranger who had just picked a seat to a sign-up form
+   * before they had given anything, which is where people leave — the
+   * cheapest possible abandonment, paid for at the top of the funnel.
    *
-   * Orders placed as a guest BEFORE this change still work: they are read and
-   * refunded through their access token exactly as before, and /:id/claim
-   * still attaches them to an account. This closes the door on new guest
-   * orders; it does not orphan the old ones.
+   * So the account is created at /pay instead, out of the name, email and
+   * phone the buyer types to complete the purchase. They are details any
+   * checkout asks for; the account is a consequence of the sale rather than
+   * a toll before it. Nothing becomes ownerless: a hold with no session is
+   * claimed by that account the moment it is paid, and an unpaid one is
+   * swept like any other.
+   *
+   * The access token still issued here is what authorises /pay on such an
+   * order, exactly as it does for the legacy guest rows.
    */
-  authenticate,
+  optionalAuth,
   // Refused at the reservation step, not only at payment: holding seats is
   // already the harm -- a staff account could otherwise park the last row of
   // a sold-out tier indefinitely without ever reaching /pay.
@@ -257,11 +262,15 @@ ordersRouter.post(
 
       const created = await tx.order.create({
         data: {
-          // `authenticate` on this route guarantees a user, so this is never
-          // null for a new order. Asserted rather than defaulted to null: a
-          // silent fallback would quietly recreate guest orders if the
-          // middleware above were ever loosened.
-          customerId: req.user!.id,
+          /*
+           * Null until /pay, for a visitor with no session.
+           *
+           * Not a return to guest checkout: /pay creates or signs in an
+           * account from the details typed there and stamps it on this row,
+           * so an order that completes is always owned. One that never
+           * completes is swept with the hold, and was never a sale.
+           */
+          customerId: req.user?.id ?? null,
           eventId: event.id,
           status: "PENDING",
           // Blank until /pay collects them — the reservation is what matters
@@ -335,6 +344,15 @@ const paySchema = z.object({
   holderName: z.string().optional(),
   email: z.string().optional(),
   phone: z.string().optional(),
+  /*
+   * Only for an order with no account yet, whose email turns out to belong
+   * to one. The checkout asks for it in place rather than sending the buyer
+   * to a login page, which is the interruption this flow removes.
+   *
+   * Never used to CHANGE a password, and never read for an order that
+   * already has an owner.
+   */
+  password: z.string().optional(),
   /** Waitlist entry this order came from, so paying it closes the offer. */
   claimEntryId: z.string().optional(),
   /** Which language CMI should render its hosted card page in. */
@@ -397,6 +415,37 @@ ordersRouter.post(
     if (order.status !== "PENDING") throw new HttpError(409, "Order is no longer payable");
     if (order.holdUntil && order.holdUntil.getTime() < Date.now()) {
       throw new HttpError(410, "Hold expired — please start again");
+    }
+
+    /*
+     * An order held by a visitor gets its account HERE, before anything
+     * else reads it.
+     *
+     * /hold no longer demands a session, so a stranger can pick seats and
+     * reach this point with customerId null. The details they type to pay --
+     * name, email, phone -- are exactly what an account needs, so it is
+     * created from them: no sign-up form before they had committed, and no
+     * ownerless order afterwards.
+     *
+     * A legacy guest order reaches this branch too, and that is correct: it
+     * has no owner either, and giving it one when its buyer finally pays is
+     * strictly better than leaving it answerable only to a link. The email
+     * they use is the one already on the order, so an existing account is
+     * matched rather than duplicated.
+     */
+    if (!order.customerId && !req.user) {
+      const resolved = await resolveExpressAccount({
+        holderName: body.holderName ?? order.holderName,
+        email: body.email ?? order.email,
+        phone: body.phone ?? order.phone,
+        password: body.password,
+      });
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { customerId: resolved.userId },
+      });
+      // Keep the in-memory row in step: everything below reads customerId.
+      order.customerId = resolved.userId;
     }
 
     /*

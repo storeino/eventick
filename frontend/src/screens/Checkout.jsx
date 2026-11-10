@@ -9,7 +9,7 @@ import { useCart } from "../CartContext";
 import { useAuth } from "../AuthContext";
 import { useI18n } from "../i18n";
 import { Button, Card, Container, Countdown, Field, Input, LoadingState, Notice } from "../ui";
-import { phoneOk } from "../payment";
+import { emailOk, phoneOk } from "../payment";
 import { cn, eventText } from "../utils";
 
 export default function Checkout() {
@@ -25,6 +25,24 @@ export default function Checkout() {
   const [promo, setPromo] = useState("");
   const [promoOn, setPromoOn] = useState("");
   const [discountCents, setDiscountCents] = useState(0);
+
+  /*
+   * A visitor types their own details; a signed-in buyer does not.
+   *
+   * Blank for someone with a session -- the server reads the account and
+   * ignores anything sent -- and the fields are not rendered for them.
+   */
+  const [guestName, setGuestName] = useState("");
+  const [guestEmail, setGuestEmail] = useState("");
+  /*
+   * Shown only after the server says this email already has an account.
+   *
+   * Asking up front would put a password field in front of every new
+   * customer, which is the sign-up form this flow exists to avoid; asking
+   * afterwards costs the one person it concerns a single extra step.
+   */
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [guestPassword, setGuestPassword] = useState("");
 
   /* Store credit. Opt-in, not automatic: someone holding 400 MAD from a
      cancelled festival may want to keep it for the rescheduled date rather
@@ -69,10 +87,9 @@ export default function Checkout() {
      * `loading` is waited on so the redirect does not fire during the
      * auth-context hydration that happens on every page load.
      */
-    if (!authLoading && !user) {
-      navigate(`/login?next=${encodeURIComponent("/paiement")}`, { replace: true });
-      return;
-    }
+    /* No redirect for a visitor: this page IS the sign-up now. The details
+       they type to pay become their account, so sending them to /login
+       first would be the detour the whole change removes. */
     api.get(`/events/${cart.eventSlug}`).then((data) => setEvent(data.event));
   }, [cart, navigate, user, authLoading]);
 
@@ -221,6 +238,14 @@ export default function Checkout() {
        stored number -- demanding a valid value for a hidden field would make
        the button do nothing with no visible reason why. */
     if (!user?.phone && !phoneOk(phone)) next.phone = t("errPhone");
+    /* A visitor types their own name and address: the server has no account
+       to read them from, so they are checked here rather than discovered as
+       a 400 after the request. */
+    if (!user) {
+      if (guestName.trim().length < 3) next.name = t("errName");
+      if (!emailOk(guestEmail)) next.email = t("errEmail");
+      if (needsPassword && guestPassword.length < 1) next.password = t("errPassword");
+    }
     setErrors(next);
     if (Object.keys(next).length) return;
 
@@ -231,10 +256,14 @@ export default function Checkout() {
     const orderId = cart.orderId;
     try {
       const pay = await api.post(`/orders/${orderId}/pay`, {
-        // From the signed-in account. The server reads the session and
-        // ignores these; sending them keeps the request shape it validates.
-        holderName: (user?.name ?? "").trim(),
-        email: (user?.email ?? "").trim(),
+        /* For a signed-in buyer the server reads the session and ignores
+           these; sending them keeps the request shape it validates. For a
+           visitor they are the account about to be created. */
+        holderName: (user?.name ?? guestName).trim(),
+        email: (user?.email ?? guestEmail).trim(),
+        /* Only when the server asked for it, which it does when the email
+           turns out to belong to an existing account. */
+        ...(needsPassword && guestPassword ? { password: guestPassword } : {}),
         /* Omitted when the field was not shown. Sending "" would fail the
            phoneOk check on the server, where leaving it out falls through
            to the number already on the account -- which is the whole point
@@ -263,6 +292,28 @@ export default function Checkout() {
         clear();
         toast.error(t("holdExpired"));
         navigate(`/evenements/${cart.eventSlug}`);
+        return;
+      }
+      /*
+       * The email belongs to an account. Grow a password field in place
+       * rather than sending them to /login — a redirect here would lose the
+       * form they just filled in and reintroduce the interruption this flow
+       * removed, only later and more annoying.
+       *
+       * Matched on the server's flag, not on the message text, which would
+       * break the first time the wording is improved or translated.
+       */
+      if (err.data?.emailTaken) {
+        setNeedsPassword(true);
+        setErrors({ password: t("errPasswordNeeded") });
+        toast.error(t("errPasswordNeeded"));
+        return;
+      }
+      /* An account made by an earlier express checkout, which has no
+         password at all. Asking for one would be a dead end, so say where
+         to go instead. */
+      if (err.data?.needsPasswordSetup) {
+        toast.error(err.message, { duration: 10_000 });
         return;
       }
       toast.error(err.message || t("reserveFail"));
@@ -338,17 +389,77 @@ export default function Checkout() {
               <Card className="mt-5">
                 <h2 className="font-display text-heading font-extrabold">{t("buyer")}</h2>
                 <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={reserve} noValidate>
-                  {/* Who the ticket is for, stated rather than asked.
-                      Buying requires an account, so the server already knows
-                      the name and address and takes them from the session —
-                      two boxes asking for them were busywork, and editable
-                      ones let a buyer issue a ticket in a name their own
-                      account never claimed. */}
-                  <div className="rounded-control border border-stage-fg/15 px-3 py-2.5 md:col-span-2">
-                    <p className="text-xs text-stage-muted">{t("buyerIs")}</p>
-                    <p className="mt-0.5 truncate font-semibold">{user?.name}</p>
-                    <p className="truncate text-sm text-stage-muted">{user?.email}</p>
-                  </div>
+                  {/* Signed in: stated, not asked. The server reads the
+                      session, so boxes for a name and address it already
+                      holds were busywork — and editable ones let a buyer
+                      issue a ticket in a name their account never claimed.
+
+                      A visitor types them, and they become the account. */}
+                  {user ? (
+                    <div className="rounded-control border border-stage-fg/15 px-3 py-2.5 md:col-span-2">
+                      <p className="text-xs text-stage-muted">{t("buyerIs")}</p>
+                      <p className="mt-0.5 truncate font-semibold">{user?.name}</p>
+                      <p className="truncate text-sm text-stage-muted">{user?.email}</p>
+                    </div>
+                  ) : (
+                    <>
+                      <Field label={t("fullName")} error={errors.name} required>
+                        {(props) => (
+                          <Input
+                            {...props}
+                            value={guestName}
+                            onChange={(e) => setGuestName(e.target.value)}
+                            autoComplete="name"
+                          />
+                        )}
+                      </Field>
+                      <Field label={t("email")} error={errors.email} required>
+                        {(props) => (
+                          <Input
+                            {...props}
+                            type="email"
+                            value={guestEmail}
+                            onChange={(e) => {
+                              setGuestEmail(e.target.value);
+                              /* Typing a different address makes the
+                                 password question moot: it was about the
+                                 previous one. */
+                              if (needsPassword) {
+                                setNeedsPassword(false);
+                                setGuestPassword("");
+                              }
+                            }}
+                            autoComplete="email"
+                            placeholder="nom@exemple.ma"
+                          />
+                        )}
+                      </Field>
+                    </>
+                  )}
+
+                  {/* Only after the server says this email already has an
+                      account. Asking up front would put a password field in
+                      front of every new customer, which is the sign-up form
+                      this flow exists to avoid. */}
+                  {!user && needsPassword ? (
+                    <Field
+                      label={t("password")}
+                      error={errors.password}
+                      hint={t("passwordForExisting")}
+                      required
+                      className="md:col-span-2"
+                    >
+                      {(props) => (
+                        <Input
+                          {...props}
+                          type="password"
+                          value={guestPassword}
+                          onChange={(e) => setGuestPassword(e.target.value)}
+                          autoComplete="current-password"
+                        />
+                      )}
+                    </Field>
+                  ) : null}
                   {/* Asked ONLY when the account has no number.
                       It is collected at sign-up now, so this is empty for
                       almost nobody: accounts created before the column
@@ -359,7 +470,7 @@ export default function Checkout() {
                       Everyone else sees no field at all -- which is the
                       point: a form that asks for what it already knows is
                       the thing being removed. */}
-                  {user?.phone ? null : (
+                  {user && user.phone ? null : (
                     <Field label={t("phone")} error={errors.phone} required className="md:col-span-2">
                       {(props) => (
                         <Input

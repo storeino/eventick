@@ -3,9 +3,23 @@ import { ZodError } from "zod";
 
 export class HttpError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /*
+   * Machine-readable detail beside the human message.
+   *
+   * For the cases where a client has to BRANCH, not just display: the
+   * checkout needs to tell "this email already has an account, ask for its
+   * password" from "that password was wrong", and matching on message text
+   * is how a client breaks the first time the wording is improved or
+   * translated.
+   *
+   * Flags only. Never put anything here that the message would not already
+   * have said — it goes to the browser.
+   */
+  details?: Record<string, unknown>;
+  constructor(status: number, message: string, details?: Record<string, unknown>) {
     super(message);
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -26,7 +40,7 @@ export function param(req: Request, name: string): string {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
   if (err instanceof HttpError) {
-    res.status(err.status).json({ error: err.message });
+    res.status(err.status).json({ error: err.message, ...(err.details ?? {}) });
     return;
   }
   if (err instanceof ZodError) {

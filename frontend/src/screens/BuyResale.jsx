@@ -8,7 +8,7 @@ import { api, money } from "../api";
 import { useAuth } from "../AuthContext";
 import { Badge, Button, Container, Field, Input, Skeleton } from "../ui";
 import { useI18n } from "../i18n";
-import { phoneOk } from "../payment";
+import { emailOk, phoneOk } from "../payment";
 import { intlLocaleTag } from "../utils";
 
 /**
@@ -53,6 +53,12 @@ export default function BuyResale() {
    * with the card payment.
    */
   const [phone, setPhone] = useState("");
+  /* A visitor types their own details, and they become the account. Blank
+     for a signed-in buyer, whose session the server reads instead. */
+  const [guestName, setGuestName] = useState("");
+  const [guestEmail, setGuestEmail] = useState("");
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [guestPassword, setGuestPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [cmi, setCmi] = useState(null);
 
@@ -80,15 +86,21 @@ export default function BuyResale() {
   const buy = async () => {
     if (busy) return;
     if (!phoneOk(phone)) return toast.error(t("errPhone"));
+    if (!user) {
+      if (guestName.trim().length < 3) return toast.error(t("errName"));
+      if (!emailOk(guestEmail)) return toast.error(t("errEmail"));
+      if (needsPassword && !guestPassword) return toast.error(t("errPassword"));
+    }
 
     setBusy(true);
     try {
       const res = await api.post(`/resale/${token}/buy`, {
-        // From the signed-in account. The server ignores these and reads the
-        // session anyway; sending them keeps the request shape it validates.
-        holderName: (user?.name ?? "").trim(),
-        email: (user?.email ?? "").trim(),
+        /* For a signed-in buyer the server reads the session and ignores
+           these; for a visitor they are the account about to be created. */
+        holderName: (user?.name ?? guestName).trim(),
+        email: (user?.email ?? guestEmail).trim(),
         phone: phone.trim(),
+        ...(needsPassword && guestPassword ? { password: guestPassword } : {}),
         locale,
       });
 
@@ -106,6 +118,19 @@ export default function BuyResale() {
       toast.success(t("resaleBought"));
       navigate(res.orderId ? `/confirmation/${res.orderId}` : "/billets");
     } catch (err) {
+      /* The email belongs to an account: grow a password field in place
+         rather than redirecting, which would lose the form they filled. */
+      if (err.data?.emailTaken) {
+        setNeedsPassword(true);
+        toast.error(t("errPasswordNeeded"));
+        setBusy(false);
+        return;
+      }
+      if (err.data?.needsPasswordSetup) {
+        toast.error(err.message, { duration: 10_000 });
+        setBusy(false);
+        return;
+      }
       toast.error(err.message);
     } finally {
       setBusy(false);
@@ -197,19 +222,6 @@ export default function BuyResale() {
               <p className="mt-5 rounded-control border border-line/15 bg-paper p-3 text-sm leading-relaxed text-muted">
                 {t("staffNoBuy")}
               </p>
-            ) : !authLoading && !user ? (
-              <div className="mt-5">
-                <p className="text-sm leading-relaxed text-muted">{t("resaleSignInNote")}</p>
-                <Button
-                  className="mt-3"
-                  full
-                  onClick={() =>
-                    navigate(`/login?next=${encodeURIComponent(`/revente/${token}`)}`)
-                  }
-                >
-                  {t("paySignIn")}
-                </Button>
-              </div>
             ) : cmi ? (
               <div className="mt-5">
                 <CmiRedirect
@@ -225,11 +237,54 @@ export default function BuyResale() {
                     account is already signed in, so these are facts, not
                     questions -- and leaving them editable let a buyer put
                     someone else's name on a ticket their own account owns. */}
-                <div className="rounded-control border border-line/10 bg-paper px-3 py-2.5">
-                  <p className="text-xs text-muted">{t("resaleBuyerIs")}</p>
-                  <p className="mt-0.5 truncate font-semibold text-ink">{user?.name}</p>
-                  <p className="truncate text-sm text-muted">{user?.email}</p>
-                </div>
+                {/* Signed in: stated. A visitor types them, and they become
+                    the account — the same path the ordinary checkout takes,
+                    because buying a resold seat is still buying and a wall
+                    on only one of the two doors is not a rule. */}
+                {user ? (
+                  <div className="rounded-control border border-line/10 bg-paper px-3 py-2.5">
+                    <p className="text-xs text-muted">{t("resaleBuyerIs")}</p>
+                    <p className="mt-0.5 truncate font-semibold text-ink">{user?.name}</p>
+                    <p className="truncate text-sm text-muted">{user?.email}</p>
+                  </div>
+                ) : (
+                  <>
+                    <Field label={t("fullName")} required>
+                      <Input
+                        value={guestName}
+                        onChange={(e) => setGuestName(e.target.value)}
+                        autoComplete="name"
+                      />
+                    </Field>
+                    <Field label={t("email")} required>
+                      <Input
+                        type="email"
+                        value={guestEmail}
+                        onChange={(e) => {
+                          setGuestEmail(e.target.value);
+                          /* A different address makes the password question
+                             moot: it was about the previous one. */
+                          if (needsPassword) {
+                            setNeedsPassword(false);
+                            setGuestPassword("");
+                          }
+                        }}
+                        autoComplete="email"
+                        placeholder="nom@exemple.ma"
+                      />
+                    </Field>
+                    {needsPassword ? (
+                      <Field label={t("password")} required hint={t("passwordForExisting")}>
+                        <Input
+                          type="password"
+                          value={guestPassword}
+                          onChange={(e) => setGuestPassword(e.target.value)}
+                          autoComplete="current-password"
+                        />
+                      </Field>
+                    ) : null}
+                  </>
+                )}
                 <Field label={t("phone")} required hint={t("resalePhoneHint")}>
                   <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="06 12 34 56 78" />
                 </Field>

@@ -175,32 +175,24 @@ export default function EventDetail() {
       return;
     }
     /*
-     * Buying needs an account. The server enforces it (authenticate on
-     * /orders/hold); this sends people to sign in FIRST rather than letting
-     * them pick seats, press Book and collect a 401.
+     * No sign-in detour. A visitor goes straight to the basket.
      *
-     * `?next=` brings them back to this event, so signing in costs them the
-     * click and not the basket. Login only honours same-site paths, so this
-     * cannot be turned into an open redirect.
+     * This used to send anyone without a session to /login first, because
+     * /orders/hold required one. That was right about the destination and
+     * wrong about the moment: a stranger who had just picked a seat met a
+     * sign-up form before they had given anything, which is the cheapest
+     * possible place to lose them — and the seat they chose was not even
+     * held while they filled it in.
      *
-     * `authLoading` is checked first: a click landing during the auth
-     * hydration that runs on every page load would otherwise read `user` as
-     * null and send a signed-in buyer to the login page.
+     * The account is created at payment now, out of the name, email and
+     * phone the checkout asks for anyway. Nothing is lost: the hold still
+     * reserves the seat immediately, and an unpaid one is swept as before.
+     *
+     * `authLoading` is still awaited, so a click during the hydration that
+     * runs on every page load does not read `user` as null and send a
+     * signed-in buyer down the visitor path.
      */
     if (authLoading) return;
-    if (!user) {
-      /*
-       * The CURRENT url, query string included, not a rebuilt path.
-       *
-       * A waitlist offer arrives as /evenements/<slug>?claim=<token> and that
-       * token is the seat being held for this person. Rebuilding the path
-       * from the slug alone would drop it, so signing in would cost them the
-       * offer -- and the 30-minute window keeps running while they do it.
-       */
-      const here = `${window.location.pathname}${window.location.search}`;
-      navigate(`/login?next=${encodeURIComponent(here)}`);
-      return;
-    }
     if (booking) return;
     setBooking(true);
     try {
@@ -591,10 +583,11 @@ export default function EventDetail() {
                   loading={booking}
                   onClick={checkout}
                 >
-                  {/* Says where the click actually leads. A button reading
-                      "continue to payment" that opens a login page reads as a
-                      fault, even though signing in is the intended step. */}
-                  {user || authLoading ? t("pay") : t("paySignIn")}
+                  {/* One label now, because there is one destination. It
+                      read "Sign in to book" for a visitor, which was honest
+                      about the old detour and is simply wrong about this
+                      one: the click goes to the basket either way. */}
+                  {t("pay")}
                 </Button>
               )}
 

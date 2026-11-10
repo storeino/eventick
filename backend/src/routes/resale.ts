@@ -7,6 +7,7 @@ import { phoneOk, makePaymentRef } from "../lib/payment-sim.js";
 import { buildPaymentRequest, cmiConfig, cmiUrls, isMockPayments } from "../lib/cmi.js";
 import { cancelListing, completeResale, listTicketForResale, resolveListing } from "../lib/resale.js";
 import { requireTicketAccessWithSession } from "../lib/order-access.js";
+import { resolveExpressAccount } from "../lib/express-account.js";
 
 export const resaleRouter = Router();
 
@@ -108,6 +109,12 @@ resaleRouter.get(
 
 const buySchema = z.object({
   /*
+   * Supplied by a VISITOR, who has no account yet: these become one. A
+   * signed-in buyer sends them too and they are ignored — the session is
+   * authoritative there, exactly as at /orders/pay.
+   */
+  password: z.string().optional(),
+  /*
    * Accepted but NOT trusted. The route requires a session, so the account
    * already names the buyer -- taking these from the body let a signed-in
    * buyer put any name on a seat their own account owns, and send the
@@ -132,14 +139,19 @@ const buySchema = z.object({
 resaleRouter.post(
   "/:token/buy",
   /*
-   * An account is required, exactly as at /orders/hold.
+   * A session is optional, exactly as at /orders/hold.
    *
-   * Buying a resold seat is still buying, just through a different door --
-   * and a rule enforced on only one of two doors is not enforced. Leaving
-   * this on optionalAuth would have kept guest checkout alive via any resale
-   * link, which is the same orders-with-no-owner this change exists to end.
+   * That rule was "an account is required", and the reasoning holds in both
+   * directions: buying a resold seat is still buying, through a different
+   * door, so a rule enforced on only one of them is not enforced. When the
+   * ordinary checkout stopped demanding a sign-up before the sale, leaving
+   * this one demanding it would have meant a stranger could buy a ticket
+   * but not a RESOLD ticket — same person, same money, different wall.
+   *
+   * It is still not guest checkout: the account is created from the details
+   * typed to pay, below, so every resale order has a real owner.
    */
-  authenticate,
+  optionalAuth,
   // Same conflict of interest as /orders/hold. Listing a ticket (above) is
   // not guarded: that is selling, and a staff account has no ticket to sell.
   refuseStaffPurchase,
@@ -151,24 +163,51 @@ resaleRouter.post(
     if (!listing) throw new HttpError(410, "This listing is no longer available");
 
     /*
+     * The buyer's account, created here when there is no session.
+     *
+     * Same path the ordinary checkout takes: the name, email and phone they
+     * type to pay are what an account needs, so it is made from them rather
+     * than demanded before they have committed. An existing email is signed
+     * in with its password, in place, without leaving the page.
+     */
+    const buyer = req.user
+      ? { id: req.user.id, name: req.user.name, email: req.user.email }
+      : await (async () => {
+          const resolved = await resolveExpressAccount({
+            holderName: body.holderName ?? "",
+            email: body.email ?? "",
+            phone: body.phone,
+            password: body.password,
+          });
+          const user = await prisma.user.findUniqueOrThrow({
+            where: { id: resolved.userId },
+            select: { id: true, name: true, email: true },
+          });
+          return user;
+        })();
+
+    /*
      * You cannot buy your own seat.
      *
-     * Nothing stopped this, and it was not merely illogical -- it printed
-     * money. completeResale CREDITS the seller the face value when the seat
-     * sells, so buying your own listing returned the full price to the very
-     * balance it was bought from: measured at +300.00 MAD on a 300.00 MAD
-     * ticket, with 15.00 of commission charged to the organiser for a sale
-     * that moved a seat to nobody. Pay with credit and the loop runs free,
-     * forever.
+     * Not merely illogical -- it printed money. completeResale CREDITS the
+     * seller the face value when the seat sells, so buying your own listing
+     * returned the full price to the very balance it was bought from:
+     * measured at +300.00 MAD on a 300.00 MAD ticket, with 15.00 of
+     * commission charged to the organiser for a sale that moved a seat to
+     * nobody. Pay with credit and the loop runs free, forever.
      *
-     * Checked against the LISTING sellerId rather than the ticket order,
-     * because that is the account the money goes back to -- the one that
-     * would be on both sides of the trade.
+     * Checked AFTER the account is resolved, not before. It used to read
+     * req.user directly, which was fine while a session was required and
+     * crashed the moment a visitor could reach this route — and a check
+     * that only sees sessions would let a seller walk around it by buying
+     * through the express path with their own email.
      *
-     * A guest listing has sellerId null and is unaffected: there is no
-     * account to match, and a guest cannot reach this route anyway.
+     * Against the LISTING sellerId rather than the ticket order, because
+     * that is the account the money goes back to: the one that would be on
+     * both sides of the trade. A guest listing has sellerId null and is
+     * unaffected, there being no account to match.
      */
-    if (listing.sellerId && listing.sellerId === req.user!.id) {
+    if (listing.sellerId && listing.sellerId === buyer.id) {
       throw new HttpError(
         409,
         "This is your own listing — cancel it instead if you want the ticket back.",
@@ -177,10 +216,7 @@ resaleRouter.post(
 
     const order = await prisma.order.create({
       data: {
-        // `authenticate` above guarantees a user. Asserted rather than
-        // defaulted to null, so loosening the middleware cannot silently
-        // start minting ownerless orders again.
-        customerId: req.user!.id,
+        customerId: buyer.id,
         eventId: listing.ticket.order.eventId,
         status: "PENDING",
         /*
@@ -191,8 +227,8 @@ resaleRouter.post(
          * phone is still taken from the body: it is not on the user record,
          * and CMI wants it with the card payment.
          */
-        holderName: req.user!.name,
-        email: req.user!.email,
+        holderName: buyer.name,
+        email: buyer.email,
         phone: body.phone.trim(),
         subtotalCents: listing.priceCents,
         discountCents: 0,

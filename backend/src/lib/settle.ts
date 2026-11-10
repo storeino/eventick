@@ -290,6 +290,10 @@ function buildEmailInput(order: SettledOrder) {
     eventCity: order.event.city,
     eventStart: order.event.startAt,
     orderId: order.id,
+    /* So the email can carry a link that works without a password. An
+       account created at checkout has none yet, and this token is what
+       authorises reading the order it belongs to. */
+    accessToken: order.accessToken,
     totalCents: order.totalCents,
     tickets: order.tickets.map((ticket) => ({
       ref: ticket.ref,
