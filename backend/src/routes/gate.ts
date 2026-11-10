@@ -52,12 +52,46 @@ gateRouter.post(
     // a refusal leaves the ticket untouched.
     const target = await prisma.ticket.findUnique({
       where: { ref: scan.ref },
-      select: { order: { select: { event: { select: { organiserId: true } } } } },
+      select: {
+        order: { select: { event: { select: { organiserId: true } } } },
+        resale: { select: { status: true } },
+      },
     });
     if (target && !(await userHasPermission(req.user, "scope.any"))) {
       if (target.order.event.organiserId !== req.user!.id) {
         throw new HttpError(403, "This ticket is for another organiser's event");
       }
+    }
+
+    /*
+     * A seat that is ON SALE does not open the door.
+     *
+     * Listing a ticket leaves it VALID -- the seller keeps a usable seat
+     * until someone actually buys it, which is right: an unsold listing
+     * should not cost them the night. But the gate admitted on status
+     * alone, so a seller could list a seat, walk in on it, and leave the
+     * listing live for someone else to buy. The buyer pays for a seat that
+     * has already gone through the door, and the organiser has sold the
+     * same place twice.
+     *
+     * Checked BEFORE the claiming update, with the ownership check, so a
+     * refusal leaves the ticket exactly as it was -- the same reason that
+     * check was moved ahead of the write.
+     *
+     * Only LISTED blocks. SOLD does not reach here (completeResale moves
+     * the old ticket to TRANSFERRED and issues a new one), and CANCELLED
+     * means the seller took it off the market and wants their seat back.
+     *
+     * The seller is not stuck: cancelling the listing restores entry
+     * immediately, which is why the message says so rather than just
+     * refusing.
+     */
+    if (target?.resale?.status === "LISTED") {
+      res.status(409).json({
+        result: "listed",
+        ticket: { ref: scan.ref },
+      });
+      return;
     }
 
     const claimed = await prisma.ticket.updateMany({

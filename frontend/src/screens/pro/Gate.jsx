@@ -134,7 +134,9 @@ export default function Gate() {
         const message =
           code2 === "used"
             ? t.already
-            : code2 === "cancelled"
+            : code2 === "listed"
+              ? t.onSale
+              : code2 === "cancelled"
               ? t.cancelled
               : code2 === "moved"
                 ? t.moved
@@ -387,7 +389,9 @@ export default function Gate() {
                   <Badge tone={entry.code === "ok" ? "success" : entry.code === "used" ? "warn" : "danger"}>
                     {entry.code === "ok"
                       ? t.valid
-                      : entry.code === "used"
+                      : entry.code === "listed"
+                        ? t.onSaleShort
+                        : entry.code === "used"
                         ? t.used
                         : entry.code === "moved"
                           ? t.transferred
