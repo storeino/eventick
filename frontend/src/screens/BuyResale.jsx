@@ -8,7 +8,7 @@ import { api, money } from "../api";
 import { useAuth } from "../AuthContext";
 import { Badge, Button, Container, Field, Input, Skeleton } from "../ui";
 import { useI18n } from "../i18n";
-import { emailOk, phoneOk } from "../payment";
+import { emailOk, phoneOk, MIN_PASSWORD } from "../payment";
 import { intlLocaleTag } from "../utils";
 
 /**
@@ -59,6 +59,10 @@ export default function BuyResale() {
   const [guestEmail, setGuestEmail] = useState("");
   const [needsPassword, setNeedsPassword] = useState(false);
   const [guestPassword, setGuestPassword] = useState("");
+  /* An account with no password yet, from an earlier express checkout.
+     Distinct from needsPassword: that one proves an identity, this one
+     creates a credential. See Checkout.jsx, which has the same pair. */
+  const [settingPassword, setSettingPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [cmi, setCmi] = useState(null);
 
@@ -90,6 +94,11 @@ export default function BuyResale() {
       if (guestName.trim().length < 3) return toast.error(t("errName"));
       if (!emailOk(guestEmail)) return toast.error(t("errEmail"));
       if (needsPassword && !guestPassword) return toast.error(t("errPassword"));
+      if (settingPassword && guestPassword.length < MIN_PASSWORD) {
+        return toast.error(
+          guestPassword.length < 1 ? t("errChoosePassword") : t("errPasswordShort"),
+        );
+      }
     }
 
     setBusy(true);
@@ -101,6 +110,8 @@ export default function BuyResale() {
         email: (user?.email ?? guestEmail).trim(),
         phone: phone.trim(),
         ...(needsPassword && guestPassword ? { password: guestPassword } : {}),
+        /* Set, not checked -- a different key for a different operation. */
+        ...(settingPassword && guestPassword ? { newPassword: guestPassword } : {}),
         locale,
       });
 
@@ -122,12 +133,22 @@ export default function BuyResale() {
          rather than redirecting, which would lose the form they filled. */
       if (err.data?.emailTaken) {
         setNeedsPassword(true);
+        setSettingPassword(false);
         toast.error(t("errPasswordNeeded"));
         setBusy(false);
         return;
       }
+      /* No password on the account yet: they choose one here. This used to
+         show the server's "use the link in your ticket email" and stop --
+         advice with nowhere to follow it, since no reset route exists. */
       if (err.data?.needsPasswordSetup) {
-        toast.error(err.message, { duration: 10_000 });
+        setSettingPassword(true);
+        setNeedsPassword(false);
+        /* Cleared: what they typed was a guess at a password that does not
+           exist, and keeping it under a "choose one" label would make the
+           guess real. */
+        setGuestPassword("");
+        toast.error(t("errChoosePassword"));
         setBusy(false);
         return;
       }
@@ -264,8 +285,9 @@ export default function BuyResale() {
                           setGuestEmail(e.target.value);
                           /* A different address makes the password question
                              moot: it was about the previous one. */
-                          if (needsPassword) {
+                          if (needsPassword || settingPassword) {
                             setNeedsPassword(false);
+                            setSettingPassword(false);
                             setGuestPassword("");
                           }
                         }}
@@ -273,13 +295,20 @@ export default function BuyResale() {
                         placeholder="nom@exemple.ma"
                       />
                     </Field>
-                    {needsPassword ? (
-                      <Field label={t("password")} required hint={t("passwordForExisting")}>
+                    {needsPassword || settingPassword ? (
+                      <Field
+                        label={settingPassword ? t("choosePassword") : t("password")}
+                        required
+                        hint={settingPassword ? t("choosePasswordHint") : t("passwordForExisting")}
+                      >
                         <Input
                           type="password"
                           value={guestPassword}
                           onChange={(e) => setGuestPassword(e.target.value)}
-                          autoComplete="current-password"
+                          /* new-password where one is being chosen, so the
+                             browser offers to save rather than to fill. */
+                          autoComplete={settingPassword ? "new-password" : "current-password"}
+                          minLength={settingPassword ? MIN_PASSWORD : undefined}
                         />
                       </Field>
                     ) : null}

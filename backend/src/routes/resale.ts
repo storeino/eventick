@@ -115,6 +115,12 @@ const buySchema = z.object({
    */
   password: z.string().optional(),
   /*
+   * A password being SET, for an account that has none -- not one being
+   * checked. Distinct from `password` above so that a sign-in can never be
+   * mistaken for a password reset: see ExpressBuyer in lib/express-account.
+   */
+  newPassword: z.string().optional(),
+  /*
    * Accepted but NOT trusted. The route requires a session, so the account
    * already names the buyer -- taking these from the body let a signed-in
    * buyer put any name on a seat their own account owns, and send the
@@ -178,6 +184,7 @@ resaleRouter.post(
             email: body.email ?? "",
             phone: body.phone,
             password: body.password,
+            newPassword: body.newPassword,
           });
           const user = await prisma.user.findUniqueOrThrow({
             where: { id: resolved.userId },

@@ -353,6 +353,12 @@ const paySchema = z.object({
    * already has an owner.
    */
   password: z.string().optional(),
+  /*
+   * A password being SET, for an account that has none -- not one being
+   * checked. Distinct from `password` above so that a sign-in can never be
+   * mistaken for a password reset: see ExpressBuyer in lib/express-account.
+   */
+  newPassword: z.string().optional(),
   /** Waitlist entry this order came from, so paying it closes the offer. */
   claimEntryId: z.string().optional(),
   /** Which language CMI should render its hosted card page in. */
@@ -444,6 +450,7 @@ ordersRouter.post(
         email: body.email ?? order.email,
         phone: body.phone ?? order.phone,
         password: body.password,
+        newPassword: body.newPassword,
       });
       await prisma.order.update({
         where: { id: order.id },

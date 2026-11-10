@@ -30,6 +30,14 @@ import { logger } from "./logger.js";
  */
 export const NO_PASSWORD = "!no-password-set";
 
+/**
+ * The shortest password that may be SET here.
+ *
+ * Exported so the checkout can refuse a too-short one before the request
+ * rather than letting the buyer discover it as a 400 after submitting.
+ */
+export const MIN_PASSWORD_LENGTH = 8;
+
 /** Whether this account still has no usable password. */
 export function hasNoPassword(passwordHash: string): boolean {
   return passwordHash === NO_PASSWORD;
@@ -41,6 +49,17 @@ export interface ExpressBuyer {
   phone: string;
   /** Supplied when the email already belongs to an account. */
   password?: string;
+  /**
+   * A password to GIVE an account that has none, chosen at the checkout.
+   *
+   * Separate from `password` on purpose. That one is a credential being
+   * CHECKED against a hash; this one is a credential being CREATED. Sharing
+   * a single field would mean one typo in the branch order silently turns a
+   * sign-in attempt into a password reset, which is the whole account
+   * takeover in one line. Two fields make the distinction impossible to
+   * lose: this is only ever read when there is no hash to overwrite.
+   */
+  newPassword?: string;
 }
 
 /**
@@ -84,11 +103,61 @@ export async function resolveExpressAccount(
      * how they reach that account today.
      */
     if (hasNoPassword(existing.passwordHash)) {
-      throw new HttpError(
-        409,
-        "This email already has an account with no password yet — use the link in your ticket email, or set a password first.",
-        { needsPasswordSetup: true },
-      );
+      /*
+       * They set one here, and the sale continues.
+       *
+       * This used to refuse and tell the buyer to "use the link in your
+       * ticket email, or set a password first" -- an instruction with
+       * nowhere to follow it: there is no password-reset route in this
+       * codebase, and no button on the page. A buyer who had ever bought
+       * through express checkout could never buy again. That is worse than
+       * the sign-up wall this flow replaced, because the wall was at least
+       * escapable.
+       *
+       * Letting them choose one is safe HERE and nowhere else, because
+       * there is no password to overwrite: the account has never had one,
+       * so nothing is being bypassed, reset, or taken over. An account WITH
+       * a hash never reaches this branch -- it falls through to the
+       * emailTaken/compare path below, where a password is checked and not
+       * set. That asymmetry is the entire security argument, which is why
+       * the two cases use different fields and are ordered by the ACCOUNT's
+       * state rather than by what the request happens to carry.
+       *
+       * It is not proof of the address, and does not need to be: the
+       * account holds nothing but past orders, and the person is in the act
+       * of paying for a new one. Someone who guessed a stranger's
+       * password-less email would be buying them a ticket.
+       */
+      if (!buyer.newPassword) {
+        throw new HttpError(
+          409,
+          "This email has an account with no password yet — choose one to continue.",
+          { needsPasswordSetup: true, minPasswordLength: MIN_PASSWORD_LENGTH },
+        );
+      }
+      if (buyer.newPassword.length < MIN_PASSWORD_LENGTH) {
+        throw new HttpError(
+          400,
+          `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+          { needsPasswordSetup: true, minPasswordLength: MIN_PASSWORD_LENGTH },
+        );
+      }
+      const hash = await bcrypt.hash(buyer.newPassword, 10);
+      /*
+       * Guarded on the sentinel in the WHERE clause, not just the read
+       * above. Two checkouts racing on the same password-less account would
+       * otherwise both pass the check and the second would overwrite the
+       * first one's password. Postgres applies this atomically, so the
+       * loser updates nothing -- and that is fine: the account ends up with
+       * exactly one of the two passwords, set by one of the two people, and
+       * neither sale is blocked.
+       */
+      await prisma.user.updateMany({
+        where: { id: existing.id, passwordHash: NO_PASSWORD },
+        data: { passwordHash: hash },
+      });
+      logger.info({ userId: existing.id }, "password set during express checkout");
+      return { userId: existing.id, created: false };
     }
 
     if (!buyer.password) {

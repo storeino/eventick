@@ -9,7 +9,7 @@ import { useCart } from "../CartContext";
 import { useAuth } from "../AuthContext";
 import { useI18n } from "../i18n";
 import { Button, Card, Container, Countdown, Field, Input, LoadingState, Notice } from "../ui";
-import { emailOk, phoneOk } from "../payment";
+import { emailOk, phoneOk, MIN_PASSWORD } from "../payment";
 import { cn, eventText } from "../utils";
 
 export default function Checkout() {
@@ -43,6 +43,14 @@ export default function Checkout() {
    */
   const [needsPassword, setNeedsPassword] = useState(false);
   const [guestPassword, setGuestPassword] = useState("");
+  /*
+   * The OTHER password case: an account that has none yet, from an earlier
+   * express checkout. Kept separate from needsPassword because the two mean
+   * opposite things -- one proves an identity, the other creates a
+   * credential -- and a single flag would have the form ask "your password"
+   * for a password that does not exist. That was the dead end this fixes.
+   */
+  const [settingPassword, setSettingPassword] = useState(false);
 
   /* Store credit. Opt-in, not automatic: someone holding 400 MAD from a
      cancelled festival may want to keep it for the rescheduled date rather
@@ -245,6 +253,11 @@ export default function Checkout() {
       if (guestName.trim().length < 3) next.name = t("errName");
       if (!emailOk(guestEmail)) next.email = t("errEmail");
       if (needsPassword && guestPassword.length < 1) next.password = t("errPassword");
+      /* Checked here as well as on the server, so a too-short password is
+         caught before a round trip rather than after it. */
+      if (settingPassword && guestPassword.length < MIN_PASSWORD) {
+        next.password = guestPassword.length < 1 ? t("errChoosePassword") : t("errPasswordShort");
+      }
     }
     setErrors(next);
     if (Object.keys(next).length) return;
@@ -264,6 +277,9 @@ export default function Checkout() {
         /* Only when the server asked for it, which it does when the email
            turns out to belong to an existing account. */
         ...(needsPassword && guestPassword ? { password: guestPassword } : {}),
+        /* A DIFFERENT key, because this one is being set rather than
+           checked. The server keeps them apart for the same reason. */
+        ...(settingPassword && guestPassword ? { newPassword: guestPassword } : {}),
         /* Omitted when the field was not shown. Sending "" would fail the
            phoneOk check on the server, where leaving it out falls through
            to the number already on the account -- which is the whole point
@@ -305,15 +321,31 @@ export default function Checkout() {
        */
       if (err.data?.emailTaken) {
         setNeedsPassword(true);
+        setSettingPassword(false);
         setErrors({ password: t("errPasswordNeeded") });
         toast.error(t("errPasswordNeeded"));
         return;
       }
-      /* An account made by an earlier express checkout, which has no
-         password at all. Asking for one would be a dead end, so say where
-         to go instead. */
+      /*
+       * An account made by an earlier express checkout, which has no
+       * password at all: they choose one here and carry on.
+       *
+       * This used to show the server's message and stop. The message said
+       * to "use the link in your ticket email, or set a password first" --
+       * neither of which existed: there is no password-reset route in this
+       * codebase and no button on the page, so a buyer who had ever used
+       * express checkout could never buy again. The hold was still running
+       * while they looked for a way out that was not there.
+       */
       if (err.data?.needsPasswordSetup) {
-        toast.error(err.message, { duration: 10_000 });
+        setSettingPassword(true);
+        setNeedsPassword(false);
+        /* Blank, not kept: whatever they typed was a guess at a password
+           that does not exist, and leaving it in a field now labelled
+           "choose a password" would quietly make that guess their real one. */
+        setGuestPassword("");
+        setErrors({ password: t("errChoosePassword") });
+        toast.error(t("errChoosePassword"));
         return;
       }
       toast.error(err.message || t("reserveFail"));
@@ -424,8 +456,9 @@ export default function Checkout() {
                               /* Typing a different address makes the
                                  password question moot: it was about the
                                  previous one. */
-                              if (needsPassword) {
+                              if (needsPassword || settingPassword) {
                                 setNeedsPassword(false);
+                                setSettingPassword(false);
                                 setGuestPassword("");
                               }
                             }}
@@ -441,11 +474,16 @@ export default function Checkout() {
                       account. Asking up front would put a password field in
                       front of every new customer, which is the sign-up form
                       this flow exists to avoid. */}
-                  {!user && needsPassword ? (
+                  {!user && (needsPassword || settingPassword) ? (
                     <Field
-                      label={t("password")}
+                      /* Same field, opposite meanings -- "the password you
+                         already have" versus "pick one now" -- so the label,
+                         the hint and the autocomplete all switch with it.
+                         current-password would have the browser offer a
+                         saved password where a NEW one is being chosen. */
+                      label={settingPassword ? t("choosePassword") : t("password")}
                       error={errors.password}
-                      hint={t("passwordForExisting")}
+                      hint={settingPassword ? t("choosePasswordHint") : t("passwordForExisting")}
                       required
                       className="md:col-span-2"
                     >
@@ -455,7 +493,8 @@ export default function Checkout() {
                           type="password"
                           value={guestPassword}
                           onChange={(e) => setGuestPassword(e.target.value)}
-                          autoComplete="current-password"
+                          autoComplete={settingPassword ? "new-password" : "current-password"}
+                          minLength={settingPassword ? MIN_PASSWORD : undefined}
                         />
                       )}
                     </Field>

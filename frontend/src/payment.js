@@ -19,3 +19,14 @@ export function phoneOk(value) {
 export function emailOk(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
+
+/*
+ * The shortest password a buyer may CHOOSE at checkout, for an account that
+ * has none yet.
+ *
+ * Must stay in step with MIN_PASSWORD_LENGTH in
+ * backend/src/lib/express-account.ts, for the reason stated at the top of
+ * this file: the server rejects what this accepts, so a looser rule here
+ * only turns a clear message into a confusing 400.
+ */
+export const MIN_PASSWORD = 8;
