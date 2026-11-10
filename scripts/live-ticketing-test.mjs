@@ -45,7 +45,7 @@ const newBuyer = async (label) => {
   const r = await fetch(`${API}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: `Four ${label}`, email, password }),
+    body: JSON.stringify({ name: `Four ${label}`, email, password, phone: "0612345678" }),
   });
   const d = await r.json();
   if (!d.token) throw new Error(`register ${email}: ${JSON.stringify(d).slice(0, 120)}`);

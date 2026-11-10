@@ -275,6 +275,7 @@ const c3Reg = await call("POST", "/auth/register", {
   name: "Claimant Un",
   email: c3Email,
   password: "claimant-pass-2027",
+  phone: "0612345678",
 });
 ok("a visitor can register", c3Reg.status === 201 || c3Reg.status === 200, `HTTP ${c3Reg.status}`);
 const c3Token = c3Reg.data?.token ?? (await login(c3Email, "claimant-pass-2027"));
@@ -302,7 +303,7 @@ ok("the order now appears in the account", (c3After.data?.orders ?? []).length =
   `${(c3After.data?.orders ?? []).length} order(s) after claiming`);
 
 const c3Email2 = `c3b-${stamp}@example.test`;
-await call("POST", "/auth/register", { name: "Claimant Deux", email: c3Email2, password: "claimant-pass-2027" });
+await call("POST", "/auth/register", { name: "Claimant Deux", email: c3Email2, password: "claimant-pass-2027", phone: "0612345678" });
 const c3Token2 = await login(c3Email2, "claimant-pass-2027");
 const c3Steal = await call("POST", `/orders/${c1Sale.order.id}/claim?k=${encodeURIComponent(c1Sale.key)}`, {}, c3Token2);
 ok("a second account cannot claim the same order", c3Steal.status >= 400,
@@ -402,7 +403,7 @@ ok("with still no money moved", (c7VoidRow?.refundedCents ?? 0) === 0, `${(c7Voi
 // ═══════════════════════════════════════════════════════ CHECK 8
 heading(8, "Becoming an organiser");
 const c8Email = `c8-${stamp}@example.test`;
-await call("POST", "/auth/register", { name: "Futur Organisateur", email: c8Email, password: "futur-orga-2027" });
+await call("POST", "/auth/register", { name: "Futur Organisateur", email: c8Email, password: "futur-orga-2027", phone: "0612345678" });
 const c8Token = await login(c8Email, "futur-orga-2027");
 
 const c8Blocked = await call("GET", "/organiser/events", undefined, c8Token);

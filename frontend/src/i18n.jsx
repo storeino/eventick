@@ -190,6 +190,8 @@ const fr = {
   demoBanner:
     "Mode démonstration — aucun montant n'est débité. Carte test 4242 4242 4242 4242, n'importe quelle date future, CVC à 3 chiffres.",
   buyer: "Porteur des billets",
+  buyerIs: "Billet émis au nom de",
+  signupPhoneHint: "Pour vos commandes — demandé une seule fois.",
   fullName: "Nom complet",
   email: "E-mail",
   phone: "Téléphone",
@@ -824,6 +826,8 @@ const en = {
   stepPay: "Payment",
   stepDone: "Tickets",
   buyer: "Ticket holder",
+  buyerIs: "Ticket issued to",
+  signupPhoneHint: "For your orders — asked once, not at every purchase.",
   fullName: "Full name",
   email: "Email",
   phone: "Phone",
@@ -1468,6 +1472,8 @@ const ar = {
   demoBanner:
     "وضع تجريبي — لا يُخصم أي مبلغ. بطاقة الاختبار 4242 4242 4242 4242، أي تاريخ مستقبلي، وCVC من 3 أرقام.",
   buyer: "حامل التذاكر",
+  buyerIs: "التذكرة باسم",
+  signupPhoneHint: "لطلباتك — يُطلب مرة واحدة فقط.",
   fullName: "الاسم الكامل",
   email: "البريد",
   phone: "الهاتف",

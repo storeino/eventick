@@ -140,7 +140,23 @@ async function buy(qty, token) {
   // Detach AFTER settlement, so the order went through the real purchase and
   // ticket-issuing path and only then becomes the ownerless row under test.
   if (asGuest) {
-    await prisma.order.update({ where: { id: order.id }, data: { customerId: null } });
+    /*
+     * Detach AND restore the guest details.
+     *
+     * /pay now takes the name and email from the SESSION, so buying through
+     * a signed-in account stamps that account on the order -- which is
+     * right, and makes this fixture no longer resemble the ownerless rows
+     * it exists to test. A real guest order carries the details the buyer
+     * typed, so they are written back here along with the detachment.
+     */
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        customerId: null,
+        holderName: "Test Acheteur",
+        email: "guest-authz@example.com",
+      },
+    });
   }
   return { id: order.id, accessToken };
 }
@@ -203,7 +219,7 @@ record(
 // the order token is the proof — deliberately not the order's email,
 // which is shown to anyone holding the same link.
 const claimer = await call("POST", "/api/auth/register", {
-  body: { name: "Invite Claim", email: `guest-claim-${Date.now()}@example.com`, password: "guest-claim-2026" },
+  body: { name: "Invite Claim", email: `guest-claim-${Date.now()}@example.com`, password: "guest-claim-2026", phone: "0612345678" },
 });
 const claimerToken = claimer.data?.token;
 const claimed = await call("POST", `/api/orders/${mine.id}/claim`, {

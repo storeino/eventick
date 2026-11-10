@@ -107,7 +107,7 @@ const listingA = await prisma.resaleListing.findFirst({
 });
 const buyerEmail = `qr-buyer-${SUFFIX}@example.com`;
 await call("POST", "/api/auth/register", {
-  body: { name: "Acheteur QR", email: buyerEmail, password: "buyer12345" },
+  body: { name: "Acheteur QR", email: buyerEmail, password: "buyer12345", phone: "0612345678" },
 });
 const buyerToken = await login(buyerEmail, "buyer12345");
 const sold = await call("POST", `/api/resale/${listingA.token}/buy`, {

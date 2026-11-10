@@ -80,6 +80,16 @@ model User {
   email        String   @unique
   passwordHash String   @map("password_hash")
   name         String
+  /// Where to reach this person about an order. Collected at sign-up and
+  /// reused at every checkout, so a buyer is not asked for it again on each
+  /// purchase -- the account already knows.
+  ///
+  /// NULLABLE, and that is deliberate. Accounts created before this column
+  /// existed have no number, and a required field cannot be applied
+  /// backwards without inventing data. New sign-ups must provide one; the
+  /// older accounts are asked once, at their next checkout, and it is saved
+  /// to the account from there.
+  phone        String?
   role         Role     @default(CUSTOMER)
   createdAt    DateTime @default(now()) @map("created_at")
 

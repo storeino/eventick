@@ -111,7 +111,7 @@ if (listed.status === 200 || listed.status === 201) {
      enforced. */
   const buyerEmail = `resale-buyer-${SUFFIX}@example.com`;
   await call("POST", "/api/auth/register", {
-    body: { name: "Acheteur Revente", email: buyerEmail, password: "buyer12345" },
+    body: { name: "Acheteur Revente", email: buyerEmail, password: "buyer12345", phone: "0612345678" },
   });
   const buyerToken = await login(buyerEmail, "buyer12345");
   const buy = await call("POST", `/api/resale/${listing.token}/buy`, {

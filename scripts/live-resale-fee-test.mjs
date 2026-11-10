@@ -116,7 +116,7 @@ async function resell(priceCents, buyerToken) {
 
 const buyerEmail = `fee-buyer-${SUFFIX}@example.com`;
 await call("POST", "/api/auth/register", {
-  body: { name: "Acheteur Frais", email: buyerEmail, password: "buyer12345" },
+  body: { name: "Acheteur Frais", email: buyerEmail, password: "buyer12345", phone: "0612345678" },
 });
 const buyerToken = await login(buyerEmail, "buyer12345");
 

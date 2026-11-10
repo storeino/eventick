@@ -117,7 +117,7 @@ setGroup("ISOLATION  one organiser must not reach another's rows");
 // data" is real rather than simulated.
 const otherEmail = `authz-other-${SUFFIX}@example.com`;
 const reg = await call("POST", "/api/auth/register", {
-  body: { name: "Authz Other Organiser", email: otherEmail, password: "authz-test-pass-2026" },
+  body: { name: "Authz Other Organiser", email: otherEmail, password: "authz-test-pass-2026", phone: "0612345678" },
 });
 const otherId = reg.data?.user?.id;
 const otherToken = reg.data?.token;
@@ -225,7 +225,7 @@ setGroup("ADMIN SCOPE  admin may act outside their own rows");
  * the demo organiser, both sides returned 16 and the check proved nothing.
  */
 const scopeOwner = await call("POST", "/api/auth/register", {
-  body: { name: "Scope Organiser", email: `authz-scope-${Date.now()}@example.test`, password: "authz-scope-2027" },
+  body: { name: "Scope Organiser", email: `authz-scope-${Date.now()}@example.test`, password: "authz-scope-2027", phone: "0612345678" },
 });
 const scopeOwnerId = scopeOwner.data?.user?.id;
 // Removed in CLEANUP below: leaked ORGANISER accounts accumulate in the

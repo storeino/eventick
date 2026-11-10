@@ -37,7 +37,7 @@ const call = async (method, path, body, token) => {
 const RUN = Date.now();
 const asBuyer = async (label) => {
   const email = `wl-${RUN}-${label}@example.ma`;
-  const r = await call("POST", "/auth/register", { name: `Demo ${label}`, email, password: `wl-${RUN}-pw` });
+  const r = await call("POST", "/auth/register", { name: `Demo ${label}`, email, password: `wl-${RUN}-pw`, phone: "0612345678" });
   if (!r.data?.token) throw new Error(`register ${email}: ${r.status} ${JSON.stringify(r.data).slice(0, 110)}`);
   return { email, token: r.data.token };
 };

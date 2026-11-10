@@ -27,6 +27,9 @@ const holdSchema = z.object({
   // someone else, which is the one outcome this flow exists to prevent.
   holderName: z.string().min(3).optional(),
   email: z.string().email().optional(),
+  /* The one detail still genuinely taken from the form: it is absent on
+     accounts created before User.phone existed, and a buyer may want a
+     different number for a ticket they are collecting for someone else. */
   phone: z.string().optional(),
   promoCode: z.string().optional(),
   /** Waitlist claim token. The seat it names is reserved for this person, so
@@ -320,6 +323,15 @@ ordersRouter.delete(
 );
 
 const paySchema = z.object({
+  /*
+   * Accepted but NOT trusted for an order with an account.
+   *
+   * Every order created since guest checkout closed has one, and the
+   * handler reads the name and address from the SESSION -- these are
+   * ignored. They remain for the legacy GUEST orders, which are authorised
+   * by their access token rather than a session and have no account to
+   * read, so an older client that still sends them is not rejected.
+   */
   holderName: z.string().optional(),
   email: z.string().optional(),
   phone: z.string().optional(),
@@ -387,11 +399,40 @@ ordersRouter.post(
       throw new HttpError(410, "Hold expired — please start again");
     }
 
-    // Buyer details arrive here, not at hold time. Required before money
-    // moves: a ticket with no name or address can't be delivered or checked.
-    const holderName = body.holderName ?? order.holderName;
-    const email = body.email ?? order.email;
-    const phone = body.phone ?? order.phone;
+    /*
+     * Who this ticket is for.
+     *
+     * For an order with an ACCOUNT -- which is every order created since
+     * guest checkout closed -- the name and address are the account's and
+     * are not the client's to assert. Taking them from the body let a
+     * signed-in buyer issue a ticket in any name and send the confirmation
+     * to an address they do not read.
+     *
+     * A legacy GUEST order has no account to read, and is authorised by its
+     * access token rather than a session, so it still takes them from the
+     * body. Those orders predate the rule; this does not strand them.
+     */
+    const account = order.customerId
+      ? await prisma.user.findUnique({
+          where: { id: order.customerId },
+          select: { name: true, email: true, phone: true },
+        })
+      : null;
+
+    const holderName = account?.name ?? body.holderName ?? order.holderName;
+    const email = account?.email ?? body.email ?? order.email;
+    /*
+     * The phone, in order of what is most likely to be current: what they
+     * just typed, then the account, then whatever this order already had.
+     *
+     * The body comes FIRST here, unlike name and email, because this is the
+     * one detail the buyer may legitimately want to change per order -- a
+     * different number for a ticket they are collecting on someone else's
+     * behalf -- and because accounts created before User.phone existed have
+     * none, so the form is still the only source for them.
+     */
+    const phone = body.phone ?? account?.phone ?? order.phone;
+
     if (holderName.trim().length < 3) throw new HttpError(400, "Buyer name is required");
     if (!email.includes("@")) throw new HttpError(400, "A valid email is required");
     if (!phoneOk(phone)) throw new HttpError(400, "Invalid phone number");
@@ -401,6 +442,21 @@ ordersRouter.post(
       order.holderName = holderName;
       order.email = email;
       order.phone = phone;
+    }
+
+    /*
+     * Remember the number on the ACCOUNT, so it is asked once and not again.
+     *
+     * Only when the account has none: an older account filling it in for the
+     * first time. A later order with a different number does not overwrite
+     * it, because a one-off number for someone else's ticket is not a change
+     * of the account's own contact details.
+     */
+    if (order.customerId && account && !account.phone) {
+      await prisma.user.update({
+        where: { id: order.customerId },
+        data: { phone: phone.trim() },
+      });
     }
 
     /*

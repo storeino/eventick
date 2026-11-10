@@ -78,17 +78,17 @@ await expectStatus("login with wrong password rejected", "POST", "/api/auth/logi
 
 const newEmail = `livetest-${Date.now()}@example.com`;
 const reg = await call("POST", "/api/auth/register", {
-  body: { name: "Live Test User", email: newEmail, password: "test-password-123" },
+  body: { name: "Live Test User", email: newEmail, password: "test-password-123", phone: "0612345678" },
 });
 record("register creates a CUSTOMER", reg.status === 201 && reg.data?.user?.role === "CUSTOMER", `${reg.status} role=${reg.data?.user?.role}`);
 const newUserToken = reg.data?.token;
 const newUserId = reg.data?.user?.id;
 
 await expectStatus("register duplicate email rejected", "POST", "/api/auth/register", 422, {
-  body: { name: "Dup", email: ACCOUNTS.admin.email, password: "test-password-123" },
+  body: { name: "Dup", email: ACCOUNTS.admin.email, password: "test-password-123", phone: "0612345678" },
 });
 await expectStatus("register weak password rejected", "POST", "/api/auth/register", 400, {
-  body: { name: "Weak", email: `w-${Date.now()}@example.com`, password: "123" },
+  body: { name: "Weak", email: `w-${Date.now()}@example.com`, password: "123", phone: "0612345678" },
 });
 
 await expectStatus("GET /auth/me anonymous", "GET", "/api/auth/me", 401);
@@ -233,6 +233,7 @@ const outsider = await call("POST", "/api/auth/register", {
     name: "Outsider",
     email: `api-outsider-${Date.now()}@example.com`,
     password: `api-outsider-pass-2026`,
+    phone: "0612345678",
   },
 });
 await expectStatus("transfer by someone else's account → 403", "POST", `/api/tickets/${ticket2?.id}/transfer`, 403, {

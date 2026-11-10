@@ -13,6 +13,7 @@ import { AUDIT_ACTIONS, recordAudit } from "../lib/audit.js";
 import { planRemoval, removeUser } from "../lib/user-admin.js";
 import { normaliseRib, ribOk } from "../domain/commission.js";
 import { creditStatement } from "../lib/credit.js";
+import { phoneOk } from "../lib/payment-sim.js";
 
 export const authRouter = Router();
 
@@ -20,6 +21,17 @@ const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
   password: z.string().min(8),
+  /*
+   * Required at sign-up, so it is asked once instead of at every checkout.
+   *
+   * It used to live only on the order, which meant a buyer with six orders
+   * typed the same number six times while the account that owns all of them
+   * knew nothing about it. Format is checked below rather than by zod: the
+   * Moroccan rules (06/07 ten digits, or +212 with twelve) already live in
+   * phoneOk, and a second expression of them here would be the one that
+   * drifts.
+   */
+  phone: z.string(),
 });
 
 const loginSchema = z.object({
@@ -77,12 +89,21 @@ authRouter.post(
   authRateLimit,
   asyncHandler(async (req, res) => {
     const body = registerSchema.parse(req.body);
+    // Checked with the same helper the checkout uses, so the two cannot
+    // disagree about what a Moroccan number looks like.
+    if (!phoneOk(body.phone)) throw new HttpError(400, "Invalid phone number");
     const existing = await prisma.user.findUnique({ where: { email: body.email } });
     if (existing) throw new HttpError(422, "An account with this email already exists");
 
     const passwordHash = await bcrypt.hash(body.password, 10);
     const user = await prisma.user.create({
-      data: { name: body.name, email: body.email, passwordHash, role: PUBLIC_SIGNUP_ROLE },
+      data: {
+        name: body.name,
+        email: body.email,
+        phone: body.phone.trim(),
+        passwordHash,
+        role: PUBLIC_SIGNUP_ROLE,
+      },
     });
     const token = signToken({ sub: user.id, role: user.role });
     res.status(201).json({ token, user: publicUser(user, await permissionsOf(user)) });

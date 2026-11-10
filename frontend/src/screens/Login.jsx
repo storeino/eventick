@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Shell } from "../components/Shell";
 import { useAuth } from "../AuthContext";
 import { useI18n } from "../i18n";
-import { emailOk } from "../payment";
+import { emailOk, phoneOk } from "../payment";
 import { cn } from "../utils";
 import { DEMO_ACCOUNTS } from "../demoAccounts";
 import { Field, Input } from "../ui";
@@ -18,6 +18,10 @@ export default function Login() {
   const { user, loading, login, register } = useAuth();
   const [mode, setMode] = useState("in");
   const [name, setName] = useState("");
+  /* Collected at sign-up so it is asked once, instead of at every checkout.
+     It used to live only on the order, which meant a buyer with six orders
+     typed the same number six times. */
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -74,6 +78,7 @@ export default function Login() {
     if (!emailOk(cleanEmail)) next.email = t("errEmail");
     if (password.length < 8) next.password = t("passwordHint");
     if (mode === "up" && name.trim().length < 2) next.name = t("errName");
+    if (mode === "up" && !phoneOk(phone)) next.phone = t("errPhone");
     if (Object.keys(next).length) {
       setFieldErrors(next);
       setError(null);
@@ -84,7 +89,7 @@ export default function Login() {
     clearErrors();
     try {
       if (mode === "up") {
-        await register(name.trim(), cleanEmail, password);
+        await register(name.trim(), cleanEmail, password, phone.trim());
         toast.success(t("accountCreated"));
       } else {
         await login(cleanEmail, password);
@@ -172,6 +177,25 @@ export default function Login() {
                       onChange={(e) => setName(e.target.value)}
                       autoComplete="name"
                       placeholder="Yasmine El Fassi"
+                    />
+                  )}
+                </Field>
+              ) : null}
+              {/* Required at sign-up: the checkout then has it already, and
+                  a buyer is not asked for the same number on every
+                  purchase. */}
+              {mode === "up" ? (
+                <Field label={t("phone")} error={fieldErrors.phone} hint={t("signupPhoneHint")}>
+                  {({ id, describedBy, invalid }) => (
+                    <Input
+                      id={id}
+                      describedBy={describedBy}
+                      invalid={invalid}
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      autoComplete="tel"
+                      placeholder="06 12 34 56 78"
                     />
                   )}
                 </Field>

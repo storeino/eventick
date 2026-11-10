@@ -259,7 +259,7 @@ async function main() {
     await check("GET /auth/me without a token signals sign-out", "GET", "/auth/me", 401);
 
     await check("POST /auth/register creates an account", "POST", "/auth/register", [200, 201], {
-      body: { email: `fe-test-${SUFFIX}@example.com`, password: "motdepasse-solide-2026", name: "Nouveau Client" },
+      body: { email: `fe-test-${SUFFIX}@example.com`, password: "motdepasse-solide-2026", name: "Nouveau Client", phone: "0612345678" },
       shape: (d) => typeof d?.token === "string",
     });
   }
@@ -448,7 +448,7 @@ async function main() {
     // organisers, and a logged-in customer was redirected to the homepage
     // with no explanation at all.
     const applicant = await api("POST", "/auth/register", {
-      body: { name: "Candidat FE", email: `fe-apply-${SUFFIX}@example.com`, password: "fe-apply-2026" },
+      body: { name: "Candidat FE", email: `fe-apply-${SUFFIX}@example.com`, password: "fe-apply-2026", phone: "0612345678" },
     });
     const applicantToken = applicant.data?.token;
     record("a new account starts with no permissions", (applicant.data?.user?.permissions ?? []).length === 0);
@@ -625,6 +625,7 @@ async function main() {
         name: "Invité Partage",
         email: `fe-guest-share-${SUFFIX}@example.com`,
         password: `fe-guest-share-${SUFFIX}`,
+        phone: "0612345678",
       },
     });
     const guestHold = await api("POST", "/orders/hold", {
@@ -708,7 +709,7 @@ async function main() {
     }
     // Two people can hold the same link; the first to claim owns it.
     const other = await api("POST", "/auth/register", {
-      body: { name: "Autre", email: `fe-other-${SUFFIX}@example.com`, password: "fe-other-pass-2026" },
+      body: { name: "Autre", email: `fe-other-${SUFFIX}@example.com`, password: "fe-other-pass-2026", phone: "0612345678" },
     });
     await check("a second account cannot claim the same order", "POST", `/orders/${guestHold.data.order.id}/claim`, 409, {
       token: other.data?.token,

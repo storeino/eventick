@@ -277,10 +277,27 @@ async function main() {
 
     const badPhone = await pay(order, { phone: "123" });
     check("an invalid phone is refused before money moves", badPhone.status === 400, `${badPhone.status}`);
-    const badEmail = await pay(order, { email: "nope" });
-    check("an invalid email is refused", badEmail.status === 400, `${badEmail.status}`);
-    const shortName = await pay(order, { holderName: "A" });
-    check("a one-character name is refused", shortName.status === 400, `${shortName.status}`);
+    /*
+     * The name and email are no longer READ from the body, so a bad one is
+     * not refused — it is ignored, which is the stronger guarantee.
+     *
+     * Buying requires an account, so the server takes both from the session.
+     * Taking them from the request let a signed-in buyer issue a ticket in
+     * any name and send the confirmation to an address they never read; the
+     * old assertions here only checked that obvious rubbish was rejected,
+     * not that a plausible impersonation was.
+     */
+    const spoofed = await pay(order, { email: "nope", holderName: "A" });
+    check("rubbish in the body does not break the payment", spoofed.status === 200, `${spoofed.status}`);
+    const paidOrder = await prisma.order.findUnique({
+      where: { id: order.id },
+      select: { holderName: true, email: true },
+    });
+    check(
+      "and the order keeps the ACCOUNT's own name and address",
+      paidOrder.holderName !== "A" && paidOrder.email !== "nope",
+      `${paidOrder.holderName} <${paidOrder.email}>`,
+    );
 
     const anon = await call("POST", `/api/orders/${order.id}/pay`, {
       body: { holderName: "Stranger", email: "s@example.ma", phone: "0612345678" },
@@ -288,7 +305,10 @@ async function main() {
     // Paying attaches a name and issues tickets in it, so it is a write.
     check("a stranger cannot pay someone else's order", anon.status === 403, `${anon.status}`);
 
-    const ok = await pay(order);
+    /* A fresh order: the one above is already PAID by the check that it
+       ignores a spoofed body. */
+    const second = await hold(event, tier, 1);
+    const ok = await pay(second);
     check("a valid payment settles in mock mode", ok.status === 200 && ok.data.settled === true, JSON.stringify(ok.data));
 
     const detail = await call("GET", `/api/orders/${order.id}`, { key: order.key });
@@ -451,6 +471,7 @@ async function main() {
         name: "Resale Buyer",
         email: `op-resale-${SUFFIX}@eventick.ma`,
         password: `op-resale-${SUFFIX}`,
+        phone: "0612345678",
       },
     });
     const buy = await call("POST", `/api/resale/${listed.data.token}/buy`, {

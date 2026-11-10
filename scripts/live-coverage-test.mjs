@@ -142,6 +142,7 @@ async function main() {
     organiser: await login(ACCOUNTS.organiser),
     customer: await login(ACCOUNTS.customer),
   };
+
   const slugs = [];
   /*
    * Accounts this run registers, removed in CLEANUP.
@@ -152,6 +153,34 @@ async function main() {
    * a page about who is actually selling.
    */
   const extraUsers = [];
+
+  /*
+   * A SECOND customer, for the resale section.
+   *
+   * A seller can no longer buy their own listing: completeResale credits
+   * the seller the face value when the seat sells, so buying your own
+   * returned the full price to the balance it came from -- a loop that
+   * printed credit and billed the organiser commission on a sale that
+   * moved a seat to nobody. This suite listed and bought as the same
+   * account, which is exactly what the guard refuses, so it needs a
+   * stranger.
+   *
+   * Registered after extraUsers exists, so CLEANUP removes it rather than
+   * leaving another account on the platform every run.
+   */
+  const resaleBuyerEmail = `coverage-resale-buyer-${Date.now()}@example.com`;
+  const resaleBuyerReg = await call("POST", "/api/auth/register", {
+    body: {
+      name: "Acheteur Resale",
+      email: resaleBuyerEmail,
+      password: "coverage-buyer-2027",
+      phone: "0612345678",
+    },
+  });
+  if (resaleBuyerReg.data?.user?.id) extraUsers.push(resaleBuyerReg.data.user.id);
+  tokens.resaleBuyer =
+    resaleBuyerReg.data?.token ??
+    (await login({ email: resaleBuyerEmail, password: "coverage-buyer-2027" }));
 
   // ───────────────────────────────────────────── organiser tier CRUD ──
   setGroup("TIERS  /api/organiser/{events/:slug/tiers, tiers/:id}");
@@ -676,7 +705,7 @@ async function main() {
      */
     const otherEmail = `cov-org2-${Date.now()}@example.com`;
     const reg = await call("POST", "/api/auth/register", {
-      body: { name: "Organiser Two", email: otherEmail, password: "cov-org2-2026" },
+      body: { name: "Organiser Two", email: otherEmail, password: "cov-org2-2026", phone: "0612345678" },
     });
     const otherToken = reg.data?.token;
     if (reg.data?.user?.id) extraUsers.push(reg.data.user.id);
@@ -799,12 +828,20 @@ async function main() {
     await expectStatus("GET an unknown token → 410", "GET", "/api/resale/nope-xyz", 410);
 
     await expectStatus("buy with a bad phone → 400", "POST", `/api/resale/${token}/buy`, 400, {
-      token: tokens.customer,
+      token: tokens.resaleBuyer,
       body: { holderName: "Acheteur Resale", email: "buyer@example.com", phone: "123" },
     });
 
-    const bought = await expectStatus("POST /:token/buy completes the sale", "POST", `/api/resale/${token}/buy`, 200, {
+    /* The seller cannot buy their own seat. Checked here because this suite
+       is where the resale surface is enumerated, and the refusal is part of
+       that surface. live-resale-selfbuy-test covers the money behind it. */
+    await expectStatus("the seller buying their own listing → 409", "POST", `/api/resale/${token}/buy`, 409, {
       token: tokens.customer,
+      body: { holderName: "Vendeur Test", email: "seller@example.com", phone: "0612345678" },
+    });
+
+    const bought = await expectStatus("POST /:token/buy completes the sale", "POST", `/api/resale/${token}/buy`, 200, {
+      token: tokens.resaleBuyer,
       body: { holderName: "Acheteur Resale", email: "buyer@example.com", phone: "0612345678" },
     });
     record(

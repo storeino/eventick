@@ -301,10 +301,10 @@ async function main() {
 
     const buyerEmail = `resale-payout-buyer-${SUFFIX}@example.com`;
     const reg = await call("POST", "/api/auth/register", {
-      body: { name: "Acheteur Revente", email: buyerEmail, password: "resale-payout-2026" },
+      body: { name: "Acheteur Revente", email: buyerEmail, password: "resale-payout-2026", phone: "0612345678" },
     });
     check("a second account exists to buy it", reg.status === 201 || reg.status === 200, `${reg.status}`);
-    const buyer = reg.data?.token ?? (await login({ email: buyerEmail, password: "resale-payout-2026" }));
+    const buyer = reg.data?.token ?? (await login({ email: buyerEmail, password: "resale-payout-2026", phone: "0612345678" }));
 
     const buy = await call("POST", `/api/resale/${token}/buy`, {
       token: buyer,

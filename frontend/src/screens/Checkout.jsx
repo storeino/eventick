@@ -9,7 +9,7 @@ import { useCart } from "../CartContext";
 import { useAuth } from "../AuthContext";
 import { useI18n } from "../i18n";
 import { Button, Card, Container, Countdown, Field, Input, LoadingState, Notice } from "../ui";
-import { emailOk, phoneOk } from "../payment";
+import { phoneOk } from "../payment";
 import { cn, eventText } from "../utils";
 
 export default function Checkout() {
@@ -20,8 +20,6 @@ export default function Checkout() {
   const [event, setEvent] = useState(null);
   const filled = useRef(false);
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [errors, setErrors] = useState({});
   const [promo, setPromo] = useState("");
@@ -78,11 +76,13 @@ export default function Checkout() {
     api.get(`/events/${cart.eventSlug}`).then((data) => setEvent(data.event));
   }, [cart, navigate, user, authLoading]);
 
+  /* The phone, from the account when it has one. Accounts created before
+     User.phone existed have none, so the field is still shown for them and
+     saved on their next purchase. */
   useEffect(() => {
     if (filled.current || !user) return;
     filled.current = true;
-    setName(user.name ?? "");
-    setEmail(user.email ?? "");
+    if (user.phone) setPhone(user.phone);
   }, [user]);
 
   // The countdown is the server hold created when they pressed Book.
@@ -213,8 +213,8 @@ export default function Checkout() {
     e.preventDefault();
     if (busy) return;
     const next = {};
-    if (name.trim().length < 3) next.name = t("errName");
-    if (!emailOk(email)) next.email = t("errEmail");
+    // Name and email are the account's; the server reads them from the
+    // session and ignores anything sent here.
     if (!phoneOk(phone)) next.phone = t("errPhone");
     setErrors(next);
     if (Object.keys(next).length) return;
@@ -226,8 +226,10 @@ export default function Checkout() {
     const orderId = cart.orderId;
     try {
       const pay = await api.post(`/orders/${orderId}/pay`, {
-        holderName: name.trim(),
-        email: email.trim(),
+        // From the signed-in account. The server reads the session and
+        // ignores these; sending them keeps the request shape it validates.
+        holderName: (user?.name ?? "").trim(),
+        email: (user?.email ?? "").trim(),
         phone: phone.trim(),
         locale,
         useCredit,
@@ -327,14 +329,21 @@ export default function Checkout() {
               <Card className="mt-5">
                 <h2 className="font-display text-heading font-extrabold">{t("buyer")}</h2>
                 <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={reserve} noValidate>
-                  <Field label={t("fullName")} error={errors.name} required>
-                    {(props) => <Input {...props} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />}
-                  </Field>
-                  <Field label={t("email")} error={errors.email} required>
-                    {(props) => (
-                      <Input {...props} type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
-                    )}
-                  </Field>
+                  {/* Who the ticket is for, stated rather than asked.
+                      Buying requires an account, so the server already knows
+                      the name and address and takes them from the session —
+                      two boxes asking for them were busywork, and editable
+                      ones let a buyer issue a ticket in a name their own
+                      account never claimed. */}
+                  <div className="rounded-control border border-stage-fg/15 px-3 py-2.5 md:col-span-2">
+                    <p className="text-xs text-stage-muted">{t("buyerIs")}</p>
+                    <p className="mt-0.5 truncate font-semibold">{user?.name}</p>
+                    <p className="truncate text-sm text-stage-muted">{user?.email}</p>
+                  </div>
+                  {/* The phone is still asked when the account has none: it
+                      was only ever stored on the order, so accounts created
+                      before it moved to the profile have nothing to reuse.
+                      Once given it is saved, and this stops appearing. */}
                   <Field label={t("phone")} error={errors.phone} required className="md:col-span-2">
                     {(props) => (
                       <Input
